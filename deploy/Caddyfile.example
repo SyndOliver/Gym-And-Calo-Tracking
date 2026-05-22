@@ -1,0 +1,59 @@
+# ===========================================================
+# Caddyfile mẫu cho Gym Tracker
+# ===========================================================
+# Thay 'gym.example.com' bằng domain bạn trỏ về server
+# Đặt file này tại /etc/caddy/Caddyfile rồi chạy:
+#   sudo systemctl reload caddy
+# Caddy tự xin SSL Let's Encrypt - không cần config gì thêm.
+# ===========================================================
+
+gym.example.com {
+    # Reverse proxy đến container Docker (đang lắng nghe localhost:3000)
+    reverse_proxy localhost:3000 {
+        # Headers cho ứng dụng biết đang sau proxy
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Nén response để load nhanh hơn trên 4G
+    encode gzip zstd
+
+    # ----- Bảo vệ bằng Basic Auth (rất khuyến nghị) -----
+    # Tạo password hash bằng:
+    #   caddy hash-password
+    # Rồi dán hash bên dưới (thay user và hash của bạn)
+    #
+    # basicauth {
+    #     myname JDJhJDE0JC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u
+    # }
+
+    # ----- Security headers -----
+    header {
+        # HSTS: ép HTTPS suốt 1 năm
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        # Chặn iframe embed (clickjacking)
+        X-Frame-Options "SAMEORIGIN"
+        # Chặn content-type sniffing
+        X-Content-Type-Options "nosniff"
+        # Referrer policy
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # Permissions policy: tắt camera/mic vì app không dùng
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    }
+
+    # ----- Logging -----
+    log {
+        output file /var/log/caddy/gym-access.log {
+            roll_size 50mb
+            roll_keep 5
+        }
+        format console
+    }
+
+    # ----- Compress static assets aggressively -----
+    @static {
+        path /_next/static/* /icon.svg /favicon.svg /manifest.webmanifest
+    }
+    header @static Cache-Control "public, max-age=31536000, immutable"
+}

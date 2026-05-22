@@ -1,0 +1,18 @@
+{
+  "name": "Gym Tracker",
+  "short_name": "Gym",
+  "description": "Theo dõi buổi tập gym - sets, reps, volume, đồng hồ nghỉ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090b12",
+  "theme_color": "#090b12",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

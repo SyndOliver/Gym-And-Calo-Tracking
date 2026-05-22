@@ -1,0 +1,31 @@
+services:
+  gym-tracker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gym-tracker:latest
+    container_name: gym-tracker
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/gym.db
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - gym_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  gym_data:
+    driver: local
