@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
-import { analyzeFoodImage, type FoodAnalysisResult } from "@/lib/gemini";
+import { analyzeFoodImage, analyzeFoodText, type FoodAnalysisResult } from "@/lib/gemini";
 
 const MAX_CALORIES = 10000;
 const MAX_MACRO_GRAMS = 1000;
@@ -44,6 +44,20 @@ export async function analyzeFood(
 ): Promise<{ ok: true; data: FoodAnalysisResult } | { ok: false; error: string }> {
   try {
     const data = await analyzeFoodImage(imageBase64, mimeType);
+    return { ok: true, data };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Lỗi không xác định",
+    };
+  }
+}
+
+export async function analyzeFoodByText(
+  foodName: string
+): Promise<{ ok: true; data: FoodAnalysisResult } | { ok: false; error: string }> {
+  try {
+    const data = await analyzeFoodText(foodName);
     return { ok: true, data };
   } catch (err) {
     return {

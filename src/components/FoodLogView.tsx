@@ -22,8 +22,10 @@ import {
   Droplet,
   GlassWater,
   Settings2,
+  Minus,
+  Heart,
 } from "lucide-react";
-import { addFoodLog, analyzeFood, deleteFoodLog, saveNutritionGoal, logWater, saveNutritionGoalTemplate } from "@/app/actions/food";
+import { addFoodLog, analyzeFood, analyzeFoodByText, deleteFoodLog, saveNutritionGoal, logWater, saveNutritionGoalTemplate } from "@/app/actions/food";
 import { suggestNutritionGoalFromLatest } from "@/app/actions/body";
 import { cn, formatDateTime } from "@/lib/utils";
 
@@ -51,6 +53,29 @@ type FoodDraft = {
   carbs: string;
   fiber: string;
   healthyScore: string;
+};
+
+type IngredientDraft = {
+  name: string;
+  weightG: string;
+  calories: string;
+  protein: string;
+  fat: string;
+  carbs: string;
+  baseWeightG?: number;
+  baseCalories?: number;
+  baseProtein?: number;
+  baseFat?: number;
+  baseCarbs?: number;
+};
+
+const EMPTY_INGREDIENT: IngredientDraft = {
+  name: "",
+  weightG: "",
+  calories: "",
+  protein: "",
+  fat: "",
+  carbs: "",
 };
 
 type GoalDraft = {
@@ -257,6 +282,9 @@ export default function FoodLogView({
   const [isSavingGoal, setIsSavingGoal] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ingredients, setIngredients] = useState<IngredientDraft[]>([]);
+  const [showAddIngredient, setShowAddIngredient] = useState(false);
+  const [newIngredient, setNewIngredient] = useState<IngredientDraft>(EMPTY_INGREDIENT);
 
   // AI weight recalculation
   const [aiBaseWeight, setAiBaseWeight] = useState<number | null>(null);
@@ -365,9 +393,113 @@ export default function FoodLogView({
     setAiBaseWeight(null);
     setAiBaseNutrition(null);
     setWeightOverride("");
+    setIngredients([]);
+    setShowAddIngredient(false);
+    setNewIngredient(EMPTY_INGREDIENT);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+  }
+
+  // Recalculate totals from ingredients
+  function recalcTotalsFromIngredients(ings: IngredientDraft[]) {
+    let totalCal = 0, totalPro = 0, totalFat = 0, totalCarbs = 0;
+    let totalWeight = 0;
+    for (const ing of ings) {
+      totalCal += Number(ing.calories) || 0;
+      totalPro += Number(ing.protein) || 0;
+      totalFat += Number(ing.fat) || 0;
+      totalCarbs += Number(ing.carbs) || 0;
+      totalWeight += Number(ing.weightG) || 0;
+    }
+    setDraft((prev) => ({
+      ...prev,
+      calories: String(Math.round(totalCal)),
+      protein: String(Math.round(totalPro * 10) / 10),
+      fat: String(Math.round(totalFat * 10) / 10),
+      carbs: String(Math.round(totalCarbs * 10) / 10),
+    }));
+    if (totalWeight > 0) {
+      setWeightOverride(String(Math.round(totalWeight)));
+    }
+  }
+
+  function handleRemoveIngredient(index: number) {
+    const updated = ingredients.filter((_, i) => i !== index);
+    setIngredients(updated);
+    recalcTotalsFromIngredients(updated);
+  }
+
+  function handleAddNewIngredient() {
+    if (!newIngredient.name.trim()) return;
+    const updated = [...ingredients, newIngredient];
+    setIngredients(updated);
+    recalcTotalsFromIngredients(updated);
+    setNewIngredient(EMPTY_INGREDIENT);
+    setShowAddIngredient(false);
+  }
+
+  function handleIngredientChange(index: number, field: keyof IngredientDraft, value: string) {
+    const updated = ingredients.map((ing, i) =>
+      i === index ? { ...ing, [field]: value } : ing
+    );
+    setIngredients(updated);
+    if (field !== "name") {
+      recalcTotalsFromIngredients(updated);
+    }
+  }
+
+  function handleIngredientWeightChange(index: number, newWeightStr: string) {
+    const ing = ingredients[index];
+    if (!ing) return;
+
+    const newWeight = Number(newWeightStr);
+    const baseW = ing.baseWeightG !== undefined ? ing.baseWeightG : Number(ing.weightG) || 0;
+    const baseCal = ing.baseCalories !== undefined ? ing.baseCalories : Number(ing.calories) || 0;
+    const basePro = ing.baseProtein !== undefined ? ing.baseProtein : Number(ing.protein) || 0;
+    const baseFat = ing.baseFat !== undefined ? ing.baseFat : Number(ing.fat) || 0;
+    const baseCarb = ing.baseCarbs !== undefined ? ing.baseCarbs : Number(ing.carbs) || 0;
+
+    const updatedIng = {
+      ...ing,
+      weightG: newWeightStr,
+      baseWeightG: baseW,
+      baseCalories: baseCal,
+      baseProtein: basePro,
+      baseFat: baseFat,
+      baseCarbs: baseCarb,
+    };
+
+    if (Number.isFinite(newWeight) && newWeight > 0 && baseW > 0) {
+      const ratio = newWeight / baseW;
+      updatedIng.calories = String(Math.round(baseCal * ratio));
+      updatedIng.protein = String(Math.round(basePro * ratio * 10) / 10);
+      updatedIng.fat = String(Math.round(baseFat * ratio * 10) / 10);
+      updatedIng.carbs = String(Math.round(baseCarb * ratio * 10) / 10);
+    }
+
+    const updated = ingredients.map((item, i) => (i === index ? updatedIng : item));
+    setIngredients(updated);
+    recalcTotalsFromIngredients(updated);
+  }
+
+  function handleIngredientChangeWithBaseline(index: number, field: keyof IngredientDraft, value: string) {
+    const ing = ingredients[index];
+    if (!ing) return;
+
+    const updatedIng = {
+      ...ing,
+      [field]: value,
+      baseWeightG: undefined,
+      baseCalories: undefined,
+      baseProtein: undefined,
+      baseFat: undefined,
+      baseCarbs: undefined,
+    };
+
+    const updated = ingredients.map((item, i) => (i === index ? updatedIng : item));
+    setIngredients(updated);
+    recalcTotalsFromIngredients(updated);
   }
 
   function recalcFromWeight(newWeightStr: string) {
@@ -469,6 +601,17 @@ export default function FoodLogView({
         fiber: String(res.data.fiber),
         healthyScore: String(res.data.healthyScore),
       });
+      // Populate ingredients
+      if (res.data.ingredients && res.data.ingredients.length > 0) {
+        setIngredients(res.data.ingredients.map((ing) => ({
+          name: ing.name,
+          weightG: String(ing.weightG),
+          calories: String(ing.calories),
+          protein: String(ing.protein),
+          fat: String(ing.fat),
+          carbs: String(ing.carbs),
+        })));
+      }
       if (res.data.servingWeightG > 0) {
         setAiBaseWeight(res.data.servingWeightG);
         setAiBaseNutrition({
@@ -482,6 +625,66 @@ export default function FoodLogView({
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Không phân tích được ảnh món ăn");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }
+
+  async function handleAnalyzeText() {
+    if (!draft.name.trim()) return;
+
+    setError(null);
+    setCameraError(null);
+    setIsAnalyzing(true);
+
+    try {
+      const res = await analyzeFoodByText(draft.name);
+      if (res.ok) {
+        setDraft({
+          name: res.data.name,
+          servingDescription: res.data.servingDescription,
+          calories: String(res.data.calories),
+          protein: String(res.data.protein),
+          fat: String(res.data.fat),
+          carbs: String(res.data.carbs),
+          fiber: String(res.data.fiber),
+          healthyScore: String(res.data.healthyScore),
+        });
+        
+        // Populate ingredients
+        if (res.data.ingredients && res.data.ingredients.length > 0) {
+          setIngredients(res.data.ingredients.map((ing) => ({
+            name: ing.name,
+            weightG: String(ing.weightG),
+            calories: String(ing.calories),
+            protein: String(ing.protein),
+            fat: String(ing.fat),
+            carbs: String(ing.carbs),
+          })));
+        } else {
+          setIngredients([]);
+        }
+
+        if (res.data.servingWeightG > 0) {
+          setAiBaseWeight(res.data.servingWeightG);
+          setAiBaseNutrition({
+            calories: res.data.calories,
+            protein: res.data.protein,
+            fat: res.data.fat,
+            carbs: res.data.carbs,
+            fiber: res.data.fiber,
+          });
+          setWeightOverride(String(res.data.servingWeightG));
+        } else {
+          setAiBaseWeight(null);
+          setAiBaseNutrition(null);
+          setWeightOverride("");
+        }
+      } else {
+        setError(res.error);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Không phân tích được món ăn");
     } finally {
       setIsAnalyzing(false);
     }
@@ -544,6 +747,17 @@ export default function FoodLogView({
         fiber: String(res.data.fiber),
         healthyScore: String(res.data.healthyScore),
       });
+      // Populate ingredients
+      if (res.data.ingredients && res.data.ingredients.length > 0) {
+        setIngredients(res.data.ingredients.map((ing) => ({
+          name: ing.name,
+          weightG: String(ing.weightG),
+          calories: String(ing.calories),
+          protein: String(ing.protein),
+          fat: String(ing.fat),
+          carbs: String(ing.carbs),
+        })));
+      }
       if (res.data.servingWeightG > 0) {
         setAiBaseWeight(res.data.servingWeightG);
         setAiBaseNutrition({
@@ -978,15 +1192,6 @@ export default function FoodLogView({
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={handleOpenCamera}
-              className="btn btn-secondary !py-2"
-              disabled={isAnalyzing || isStartingCamera}
-            >
-              {isStartingCamera ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-              Mở camera
-            </button>
-            <button
-              type="button"
               onClick={() => fileInputRef.current?.click()}
               className="btn btn-ghost !py-2"
               disabled={isAnalyzing}
@@ -1041,14 +1246,53 @@ export default function FoodLogView({
         {error && <div className="rounded-lg border border-danger/50 bg-danger/10 p-2 text-sm text-danger">{error}</div>}
 
         <form onSubmit={handleSave} className="space-y-3">
+          {/* Food name + meal type */}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <Field
-              label="Tên món"
-              value={draft.name}
-              onChange={(v) => setDraft((prev) => ({ ...prev, name: v }))}
-              placeholder="Ví dụ: 3 quả trứng luộc"
-              required
-            />
+            <div className="space-y-1">
+              <label className="text-xs text-muted flex items-center justify-between">
+                <span>Tên món</span>
+                {draft.name.trim().length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleAnalyzeText}
+                    disabled={isAnalyzing}
+                    className="text-[11px] text-primary font-semibold hover:underline inline-flex items-center gap-1 transition-all"
+                  >
+                    {isAnalyzing ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3 w-3" />
+                    )}
+                    Phân tích bằng AI
+                  </button>
+                )}
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={draft.name}
+                  onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="Ví dụ: 3 quả trứng luộc..."
+                  required
+                  className="pr-20 w-full"
+                />
+                {draft.name.trim().length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleAnalyzeText}
+                    disabled={isAnalyzing}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 btn btn-primary !py-1 !px-2.5 !h-8 text-xs font-semibold rounded-lg flex items-center gap-1 transition-all"
+                  >
+                    {isAnalyzing ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5" />
+                    )}
+                    AI Quét
+                  </button>
+                )}
+              </div>
+            </div>
             <div className="space-y-1">
               <label className="text-xs text-muted">Loại bữa</label>
               <select value={mealType} onChange={(e) => setMealType(e.target.value)}>
@@ -1061,68 +1305,238 @@ export default function FoodLogView({
             </div>
           </div>
 
-          <Field
-            label="Khẩu phần"
-              value={draft.servingDescription}
-              onChange={(v) => setDraft((prev) => ({ ...prev, servingDescription: v }))}
-              placeholder="Ví dụ: 3 quả trứng luộc (~180g)"
-          />
-
-          {aiBaseWeight !== null && (
-            <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-1.5">
-              <div className="flex items-center gap-1.5 text-xs text-primary font-medium">
-                <Sparkles className="h-3.5 w-3.5" />
-                Điều chỉnh khối lượng – macro sẽ tự tính lại theo tỷ lệ
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min={1}
-                  max={9999}
-                  value={weightOverride}
-                  onChange={(e) => recalcFromWeight(e.target.value)}
-                  className="w-28 text-sm"
-                  placeholder="Khối lượng"
-                />
-                <span className="text-sm text-muted">gram</span>
-                <span className="text-xs text-muted ml-auto">AI ước tính: {aiBaseWeight}g</span>
-              </div>
+          {/* Healthy score badge (when AI has analyzed) */}
+          {draft.healthyScore && (
+            <div className="flex items-center gap-2">
+              <Heart className="h-4 w-4 text-red-400" />
+              <span className="text-sm font-medium">Sức khoẻ:</span>
+              <span className={cn(
+                "text-sm font-bold",
+                Number(draft.healthyScore) >= 7 ? "text-success" : Number(draft.healthyScore) >= 4 ? "text-warning" : "text-danger"
+              )}>
+                {formatHealthyScore(Number(draft.healthyScore))}
+              </span>
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-            <NumberField
-              label="Calories"
-              value={draft.calories}
-              onChange={(v) => setDraft((prev) => ({ ...prev, calories: v }))}
-            />
-            <NumberField
-              label="Protein (g)"
-              value={draft.protein}
-              onChange={(v) => setDraft((prev) => ({ ...prev, protein: v }))}
-            />
-            <NumberField
-              label="Fat (g)"
-              value={draft.fat}
-              onChange={(v) => setDraft((prev) => ({ ...prev, fat: v }))}
-            />
-            <NumberField
-              label="Carbs (g)"
-              value={draft.carbs}
-              onChange={(v) => setDraft((prev) => ({ ...prev, carbs: v }))}
-            />
-            <NumberField
-              label="Fiber (g)"
-              value={draft.fiber}
-              onChange={(v) => setDraft((prev) => ({ ...prev, fiber: v }))}
-            />
-            <NumberField
-              label="Healthy (/10)"
-              value={draft.healthyScore}
-              onChange={(v) => setDraft((prev) => ({ ...prev, healthyScore: v }))}
-            />
-          </div>
+          {/* ═══ INGREDIENT BREAKDOWN (when AI returned ingredients) ═══ */}
+          {ingredients.length > 0 ? (
+            <div className="space-y-4">
+              {/* Nutrition summary cards */}
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-muted">Calo & Dinh dưỡng</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-xl border border-border bg-surface/60 px-4 py-3 text-center">
+                    <div className="text-xs text-muted">Số lượng</div>
+                    <div className="text-xl font-bold mt-0.5">{weightOverride || "—"}<span className="text-sm font-normal text-muted">g</span></div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-surface/60 px-4 py-3 text-center">
+                    <div className="text-xs text-muted">Calo</div>
+                    <div className="text-xl font-bold mt-0.5">{draft.calories || "—"}</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-xl border border-border bg-surface/60 px-3 py-2.5 text-center">
+                    <div className="text-[11px] text-muted">Tinh bột</div>
+                    <div className="flex items-center justify-center gap-1 mt-1">
+                      <Wheat className="h-3.5 w-3.5 text-primary" />
+                      <span className="text-base font-bold">{draft.carbs || "0"}<span className="text-xs font-normal text-muted">g</span></span>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-surface/60 px-3 py-2.5 text-center">
+                    <div className="text-[11px] text-muted">Chất đạm</div>
+                    <div className="flex items-center justify-center gap-1 mt-1">
+                      <Beef className="h-3.5 w-3.5 text-success" />
+                      <span className="text-base font-bold">{draft.protein || "0"}<span className="text-xs font-normal text-muted">g</span></span>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-surface/60 px-3 py-2.5 text-center">
+                    <div className="text-[11px] text-muted">Chất béo</div>
+                    <div className="flex items-center justify-center gap-1 mt-1">
+                      <Droplets className="h-3.5 w-3.5 text-accent" />
+                      <span className="text-base font-bold">{draft.fat || "0"}<span className="text-xs font-normal text-muted">g</span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Ingredients list */}
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-muted">Thành phần</h3>
+                {ingredients.map((ing, idx) => (
+                  <div key={idx} className="rounded-xl border border-border bg-surface/40 p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <input
+                        type="text"
+                        className="bg-transparent border-0 font-semibold text-base sm:text-sm focus:ring-0 focus:border-0 p-0 w-full hover:bg-surface/60 focus:bg-surface/80 rounded px-1.5 py-0.5 transition-colors"
+                        value={ing.name}
+                        onChange={(e) => handleIngredientChange(idx, "name", e.target.value)}
+                        placeholder="Tên thành phần"
+                      />
+                      <button
+                        type="button"
+                        className="flex-shrink-0 h-7 w-7 rounded-full border border-border bg-surface/60 flex items-center justify-center hover:border-danger/50 hover:text-danger transition-colors"
+                        onClick={() => handleRemoveIngredient(idx)}
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-5 gap-1">
+                      <div>
+                        <label className="text-[10px] text-muted block mb-0.5 font-medium text-center">g</label>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          className="w-full text-base sm:text-xs text-center !py-1 !px-1 bg-surface/50 border-border rounded"
+                          value={ing.weightG}
+                          onChange={(e) => handleIngredientWeightChange(idx, e.target.value)}
+                          placeholder="g"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-muted block mb-0.5 font-medium text-center">kcal</label>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          className="w-full text-base sm:text-xs text-center !py-1 !px-1 bg-surface/50 border-border rounded"
+                          value={ing.calories}
+                          onChange={(e) => handleIngredientChangeWithBaseline(idx, "calories", e.target.value)}
+                          placeholder="kcal"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-muted block mb-0.5 font-medium text-center">Carb</label>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          className="w-full text-base sm:text-xs text-center !py-1 !px-1 bg-surface/50 border-border rounded"
+                          value={ing.carbs}
+                          onChange={(e) => handleIngredientChangeWithBaseline(idx, "carbs", e.target.value)}
+                          placeholder="Carb"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-muted block mb-0.5 font-medium text-center">Đạm</label>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          className="w-full text-base sm:text-xs text-center !py-1 !px-1 bg-surface/50 border-border rounded"
+                          value={ing.protein}
+                          onChange={(e) => handleIngredientChangeWithBaseline(idx, "protein", e.target.value)}
+                          placeholder="Đạm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-muted block mb-0.5 font-medium text-center">Béo</label>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          className="w-full text-base sm:text-xs text-center !py-1 !px-1 bg-surface/50 border-border rounded"
+                          value={ing.fat}
+                          onChange={(e) => handleIngredientChangeWithBaseline(idx, "fat", e.target.value)}
+                          placeholder="Béo"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Add ingredient form */}
+                {showAddIngredient ? (
+                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2">
+                    <Field
+                      label="Tên thành phần"
+                      value={newIngredient.name}
+                      onChange={(v) => setNewIngredient((prev) => ({ ...prev, name: v }))}
+                      placeholder="VD: Trứng luộc"
+                      required
+                    />
+                    <div className="grid grid-cols-5 gap-1.5">
+                      <NumberField label="g" value={newIngredient.weightG} onChange={(v) => setNewIngredient((prev) => ({ ...prev, weightG: v }))} />
+                      <NumberField label="kcal" value={newIngredient.calories} onChange={(v) => setNewIngredient((prev) => ({ ...prev, calories: v }))} />
+                      <NumberField label="Carbs" value={newIngredient.carbs} onChange={(v) => setNewIngredient((prev) => ({ ...prev, carbs: v }))} />
+                      <NumberField label="Protein" value={newIngredient.protein} onChange={(v) => setNewIngredient((prev) => ({ ...prev, protein: v }))} />
+                      <NumberField label="Fat" value={newIngredient.fat} onChange={(v) => setNewIngredient((prev) => ({ ...prev, fat: v }))} />
+                    </div>
+                    <div className="flex gap-2">
+                      <button type="button" className="btn btn-primary !py-1.5 text-xs" onClick={handleAddNewIngredient}>
+                        <Plus className="h-3.5 w-3.5" /> Thêm
+                      </button>
+                      <button type="button" className="btn btn-ghost !py-1.5 text-xs" onClick={() => { setShowAddIngredient(false); setNewIngredient(EMPTY_INGREDIENT); }}>
+                        <X className="h-3.5 w-3.5" /> Huỷ
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="w-full flex items-center gap-2 text-sm text-primary font-medium py-2.5 px-4 rounded-xl border border-dashed border-primary/30 hover:bg-primary/5 transition-colors"
+                    onClick={() => setShowAddIngredient(true)}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Thêm thành phần mới
+                  </button>
+                )}
+              </div>
+
+              {/* Hidden fields: fiber & healthyScore remain editable in a collapsed row */}
+              <div className="grid grid-cols-2 gap-2">
+                <NumberField
+                  label="Fiber (g)"
+                  value={draft.fiber}
+                  onChange={(v) => setDraft((prev) => ({ ...prev, fiber: v }))}
+                />
+                <NumberField
+                  label="Healthy Score (/10)"
+                  value={draft.healthyScore}
+                  onChange={(v) => setDraft((prev) => ({ ...prev, healthyScore: v }))}
+                />
+              </div>
+            </div>
+          ) : (
+            /* ═══ FALLBACK: Original flat form (when no ingredients from AI) ═══ */
+            <>
+              <Field
+                label="Khẩu phần"
+                value={draft.servingDescription}
+                onChange={(v) => setDraft((prev) => ({ ...prev, servingDescription: v }))}
+                placeholder="Ví dụ: 3 quả trứng luộc (~180g)"
+              />
+
+              {aiBaseWeight !== null && (
+                <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-xs text-primary font-medium">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Điều chỉnh khối lượng – macro sẽ tự tính lại theo tỷ lệ
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={1}
+                      max={9999}
+                      value={weightOverride}
+                      onChange={(e) => recalcFromWeight(e.target.value)}
+                      className="w-28 text-sm"
+                      placeholder="Khối lượng"
+                    />
+                    <span className="text-sm text-muted">gram</span>
+                    <span className="text-xs text-muted ml-auto">AI ước tính: {aiBaseWeight}g</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                <NumberField label="Calories" value={draft.calories} onChange={(v) => setDraft((prev) => ({ ...prev, calories: v }))} />
+                <NumberField label="Protein (g)" value={draft.protein} onChange={(v) => setDraft((prev) => ({ ...prev, protein: v }))} />
+                <NumberField label="Fat (g)" value={draft.fat} onChange={(v) => setDraft((prev) => ({ ...prev, fat: v }))} />
+                <NumberField label="Carbs (g)" value={draft.carbs} onChange={(v) => setDraft((prev) => ({ ...prev, carbs: v }))} />
+                <NumberField label="Fiber (g)" value={draft.fiber} onChange={(v) => setDraft((prev) => ({ ...prev, fiber: v }))} />
+                <NumberField label="Healthy (/10)" value={draft.healthyScore} onChange={(v) => setDraft((prev) => ({ ...prev, healthyScore: v }))} />
+              </div>
+            </>
+          )}
 
           <div className="space-y-1">
             <label className="text-xs text-muted">Ghi chú</label>
@@ -1135,13 +1549,18 @@ export default function FoodLogView({
             />
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button type="submit" className="btn btn-primary" disabled={isSaving || isAnalyzing}>
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              Lưu món ăn
+          {/* Save button - full width like reference image */}
+          <div className="flex flex-col gap-2">
+            <button
+              type="submit"
+              className="btn btn-primary w-full !py-3 text-base font-semibold"
+              disabled={isSaving || isAnalyzing}
+            >
+              {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
+              Lưu
             </button>
-            <button type="button" className="btn btn-ghost" onClick={resetDraft}>
-              <X className="h-4 w-4" /> Xóa form
+            <button type="button" className="btn btn-ghost text-xs" onClick={resetDraft}>
+              <X className="h-3.5 w-3.5" /> Xóa form
             </button>
           </div>
         </form>

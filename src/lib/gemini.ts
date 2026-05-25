@@ -1,6 +1,15 @@
 import Groq from "groq-sdk";
 import { ProxyAgent } from "undici";
 
+export type FoodIngredient = {
+  name: string;
+  weightG: number;
+  calories: number;
+  protein: number;
+  fat: number;
+  carbs: number;
+};
+
 export type FoodAnalysisResult = {
   name: string;
   servingDescription: string;
@@ -11,6 +20,7 @@ export type FoodAnalysisResult = {
   carbs: number;
   fiber: number;
   healthyScore: number;
+  ingredients: FoodIngredient[];
 };
 
 function toAsciiLower(input: string): string {
@@ -127,7 +137,15 @@ Dùng các mốc tham chiếu sau:
 Nếu không thấy rõ → dùng khẩu phần trung bình người Việt trưởng thành.
 Trả về "servingWeightG" = tổng khối lượng ước tính của khẩu phần (gram, số nguyên dương).
 
-## BƯỚC 3 – TÍNH DINH DƯỠNG (theo USDA / bảng dinh dưỡng Việt Nam)
+## BƯỚC 3 – PHÂN TÁCH THÀNH PHẦN (INGREDIENTS)
+PHẢI phân tách món ăn thành từng thành phần riêng biệt. Mỗi thành phần gồm:
+- Tên thành phần (tiếng Việt)
+- Khối lượng ước tính (gram)
+- Dinh dưỡng riêng: calories, protein, fat, carbs
+
+Ví dụ: "Phở bò" → bánh phở, thịt bò, nước dùng, hành tây và rau
+Ví dụ: "Cơm sườn" → cơm trắng, sườn nướng, rau sống, đồ chua
+
 Mốc tham chiếu nhanh (per 100g trừ khi ghi khác):
 - Cơm trắng chín: 130 kcal | P 2.7g | F 0.3g | C 28g
 - Thịt heo nạc: 143 kcal | P 26g | F 4g
@@ -166,7 +184,8 @@ Giảm điểm khi: đồ chiên ngập dầu, nước ngọt, thịt mỡ, ít/
 Tăng điểm khi: rau xanh, đạm nạc, chất xơ, ít đường tinh luyện, ít dầu.
 
 ## QUY TẮC ĐẦU RA
-- Nếu có nhiều món: cộng tổng dinh dưỡng, tên = danh sách ngắn gọn các món chính
+- PHẢI có mảng "ingredients" chứa từng thành phần
+- Tổng dinh dưỡng = tổng cộng từ tất cả ingredients
 - Làm tròn: calories → số nguyên; protein/fat/carbs/fiber → 1 chữ số thập phân; healthyScore → 1 chữ số thập phân
 - KHÔNG thêm text hay markdown ngoài JSON`;
 
@@ -175,14 +194,20 @@ Tăng điểm khi: rau xanh, đạm nạc, chất xơ, ít đường tinh luyệ
 Trả về DUY NHẤT một JSON object hợp lệ, KHÔNG có text, KHÔNG có markdown, KHÔNG có backtick:
 
 {
-  "name": "tên món chính bằng tiếng Việt, ngắn gọn (nếu nhiều món: liệt kê cách nhau dấu phẩy)",
-  "servingDescription": "mô tả khẩu phần cụ thể: đơn vị + khối lượng ước tính, ví dụ: 1 bát cơm (180g) + 2 miếng thịt kho (120g) + rau muống xào (80g)",
-  "servingWeightG": 380,
-  "calories": 520,
-  "protein": 28.5,
-  "fat": 12.3,
-  "carbs": 68.0,
-  "fiber": 3.2,
+  "name": "tên món chính bằng tiếng Việt",
+  "ingredients": [
+    { "name": "Bánh phở", "weightG": 200, "calories": 220, "protein": 4, "fat": 0.4, "carbs": 48 },
+    { "name": "Thịt bò", "weightG": 120, "calories": 250, "protein": 28, "fat": 15, "carbs": 0 },
+    { "name": "Nước dùng phở", "weightG": 350, "calories": 140, "protein": 8, "fat": 10, "carbs": 4 },
+    { "name": "Hành tây và rau", "weightG": 30, "calories": 12, "protein": 0.5, "fat": 0.1, "carbs": 2.5 }
+  ],
+  "servingDescription": "1 tô phở bò tái nạm (~700g)",
+  "servingWeightG": 700,
+  "calories": 622,
+  "protein": 40.5,
+  "fat": 25.5,
+  "carbs": 54.5,
+  "fiber": 1.5,
   "healthyScore": 7.5
 }`;
 
@@ -231,6 +256,17 @@ Trả về DUY NHẤT một JSON object hợp lệ, KHÔNG có text, KHÔNG có 
   const rawWeight = Number(parsed.servingWeightG);
   const servingWeightG = Number.isFinite(rawWeight) && rawWeight > 0 ? Math.round(rawWeight) : 0;
 
+  // Parse ingredients array
+  const rawIngredients = Array.isArray(parsed.ingredients) ? parsed.ingredients : [];
+  const ingredients: FoodIngredient[] = rawIngredients.map((ing: Record<string, unknown>) => ({
+    name: String(ing.name ?? "Thành phần"),
+    weightG: Math.round(Number(ing.weightG) || 0),
+    calories: Math.round(Number(ing.calories) || 0),
+    protein: Math.round((Number(ing.protein) || 0) * 10) / 10,
+    fat: Math.round((Number(ing.fat) || 0) * 10) / 10,
+    carbs: Math.round((Number(ing.carbs) || 0) * 10) / 10,
+  }));
+
   return {
     name: normalizedName,
     servingDescription: String(parsed.servingDescription ?? ""),
@@ -241,6 +277,154 @@ Trả về DUY NHẤT một JSON object hợp lệ, KHÔNG có text, KHÔNG có 
     carbs: Math.round((Number(parsed.carbs) || 0) * 10) / 10,
     fiber: Math.round((Number(parsed.fiber) || 0) * 10) / 10,
     healthyScore: Math.max(0, Math.min(10, Math.round(healthyScoreBase * 10) / 10)),
+    ingredients,
+  };
+}
+
+export async function analyzeFoodText(foodName: string): Promise<FoodAnalysisResult> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "GROQ_API_KEY chưa được cấu hình. Vui lòng thêm vào file .env"
+    );
+  }
+
+  const proxyUrl =
+    process.env.HTTPS_PROXY ||
+    process.env.HTTP_PROXY ||
+    process.env.https_proxy ||
+    process.env.http_proxy;
+
+  let fetchFn: typeof globalThis.fetch | undefined;
+  if (proxyUrl) {
+    const proxyAgent = new ProxyAgent(proxyUrl);
+    fetchFn = (input, init) =>
+      globalThis.fetch(input, {
+        ...(init ?? {}),
+        dispatcher: proxyAgent,
+      } as RequestInit);
+  }
+
+  const groq = new Groq({ apiKey, ...(fetchFn ? { fetch: fetchFn } : {}) });
+  const model = process.env.GROQ_MODEL ?? "meta-llama/llama-4-scout-17b-16e-instruct";
+
+  const systemPrompt = `Bạn là chuyên gia dinh dưỡng chuyên phân tích thực phẩm Việt Nam và quốc tế.
+Bạn cần phân tách món ăn được yêu cầu thành các thành phần cụ thể và ước lượng dinh dưỡng chi tiết.
+
+## BƯỚC 1 – NHẬN DIỆN MÓN ĂN
+Xác định tên món ăn dựa trên yêu cầu nhập liệu của người dùng.
+
+## BƯỚC 2 – ƯỚC LƯỢNG KHẨU PHẦN
+Sử dụng khẩu phần trung bình tiêu chuẩn của người Việt trưởng thành cho món này nếu người dùng không ghi rõ số lượng.
+Trả về "servingWeightG" = tổng khối lượng ước tính của khẩu phần (gram, số nguyên dương).
+
+## BƯỚC 3 – PHÂN TÁCH THÀNH PHẦN (INGREDIENTS)
+PHẢI phân tách món ăn thành từng thành phần riêng biệt. Mỗi thành phần gồm:
+- Tên thành phần (tiếng Việt)
+- Khối lượng ước tính (gram)
+- Dinh dưỡng riêng: calories, protein, fat, carbs
+
+Ví dụ: "Phở bò" → bánh phở, thịt bò, nước dùng, hành tây và rau
+Ví dụ: "Cơm sườn" → cơm trắng, sườn nướng, rau sống, đồ chua
+
+Mốc tham chiếu nhanh (per 100g trừ khi ghi khác):
+- Cơm trắng chín: 130 kcal | P 2.7g | F 0.3g | C 28g
+- Thịt heo nạc: 143 kcal | P 26g | F 4g
+- Thịt gà ức: 165 kcal | P 31g | F 3.6g
+- Trứng luộc (1 quả 50g): 78 kcal | P 6g | F 5g
+- Tôm: 99 kcal | P 24g | F 0.3g
+- Rau xanh nấu chín: 25–40 kcal
+- Phở bò 1 tô: 400–450 kcal
+- Bánh mì kẹp thịt 1 ổ: 350–400 kcal
+
+## BƯỚC 4 – CHẤM ĐIỂM HEALTHY (thang 1–10)
+Đánh giá mức độ dinh dưỡng lành mạnh của món ăn.
+
+## QUY TẮC ĐẦU RA
+- PHẢI có mảng "ingredients" chứa từng thành phần
+- Tổng dinh dưỡng = tổng cộng từ tất cả ingredients
+- Làm tròn: calories → số nguyên; protein/fat/carbs/fiber → 1 chữ số thập phân; healthyScore → 1 chữ số thập phân
+- KHÔNG thêm text hay markdown ngoài JSON`;
+
+  const userPrompt = `Phân tích món ăn sau đây: "${foodName}".
+
+Trả về DUY NHẤT một JSON object hợp lệ, KHÔNG có text, KHÔNG có markdown, KHÔNG có backtick:
+
+{
+  "name": "tên món chính bằng tiếng Việt",
+  "ingredients": [
+    { "name": "Bánh phở", "weightG": 200, "calories": 220, "protein": 4, "fat": 0.4, "carbs": 48 },
+    { "name": "Thịt bò", "weightG": 120, "calories": 250, "protein": 28, "fat": 15, "carbs": 0 },
+    { "name": "Nước dùng phở", "weightG": 350, "calories": 140, "protein": 8, "fat": 10, "carbs": 4 },
+    { "name": "Hành tây và rau", "weightG": 30, "calories": 12, "protein": 0.5, "fat": 0.1, "carbs": 2.5 }
+  ],
+  "servingDescription": "1 tô phở bò tái nạm (~700g)",
+  "servingWeightG": 700,
+  "calories": 622,
+  "protein": 40.5,
+  "fat": 25.5,
+  "carbs": 54.5,
+  "fiber": 1.5,
+  "healthyScore": 7.5
+}`;
+
+  let completion;
+  try {
+    completion = await groq.chat.completions.create({
+      model,
+      temperature: 0.2,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.toLowerCase().includes("fetch failed") || message.toLowerCase().includes("connect")) {
+      throw new Error(
+        "Không kết nối được đến Groq API. Vui lòng kiểm tra kết nối mạng và GROQ_API_KEY trong .env"
+      );
+    }
+    throw error;
+  }
+
+  const text = (completion.choices[0]?.message?.content ?? "").trim();
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error(
+      "AI không thể nhận diện được thực phẩm. Hãy kiểm tra lại tên món ăn bạn nhập."
+    );
+  }
+
+  const parsed = JSON.parse(jsonMatch[0]);
+  const rawHealthyScore = Number(parsed.healthyScore);
+  const healthyScoreBase = Number.isFinite(rawHealthyScore) ? rawHealthyScore : 5;
+  const normalizedName = normalizeFoodName(String(parsed.name ?? foodName));
+
+  const rawWeight = Number(parsed.servingWeightG);
+  const servingWeightG = Number.isFinite(rawWeight) && rawWeight > 0 ? Math.round(rawWeight) : 0;
+
+  const rawIngredients = Array.isArray(parsed.ingredients) ? parsed.ingredients : [];
+  const ingredients: FoodIngredient[] = rawIngredients.map((ing: Record<string, unknown>) => ({
+    name: String(ing.name ?? "Thành phần"),
+    weightG: Math.round(Number(ing.weightG) || 0),
+    calories: Math.round(Number(ing.calories) || 0),
+    protein: Math.round((Number(ing.protein) || 0) * 10) / 10,
+    fat: Math.round((Number(ing.fat) || 0) * 10) / 10,
+    carbs: Math.round((Number(ing.carbs) || 0) * 10) / 10,
+  }));
+
+  return {
+    name: normalizedName,
+    servingDescription: String(parsed.servingDescription ?? ""),
+    servingWeightG,
+    calories: Math.round(Number(parsed.calories) || 0),
+    protein: Math.round((Number(parsed.protein) || 0) * 10) / 10,
+    fat: Math.round((Number(parsed.fat) || 0) * 10) / 10,
+    carbs: Math.round((Number(parsed.carbs) || 0) * 10) / 10,
+    fiber: Math.round((Number(parsed.fiber) || 0) * 10) / 10,
+    healthyScore: Math.max(0, Math.min(10, Math.round(healthyScoreBase * 10) / 10)),
+    ingredients,
   };
 }
 
