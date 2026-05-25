@@ -103,30 +103,76 @@ model TemplateExercise {
 
 // Theo dõi chỉ số cơ thể
 model BodyMetric {
-  id        String   @id @default(cuid())
-  date      DateTime @default(now())
-  weight    Float?   // kg
-  bodyFat   Float?   // %
-  muscle    Float?   // kg cơ
-  chest     Float?   // cm vòng ngực
-  waist     Float?   // cm vòng eo
-  hip       Float?   // cm vòng mông
-  arm       Float?   // cm vòng tay
-  thigh     Float?   // cm vòng đùi
-  notes     String?
+  id               String   @id @default(cuid())
+  date             DateTime @default(now())
+  weight           Float?   // kg
+  height           Float?   // cm
+  age              Int?     // tuổi
+  gender           String?  // "male" | "female"
+  bodyFat          Float?   // %
+  muscle           Float?   // kg cơ
+  chest            Float?   // cm vòng ngực
+  waist            Float?   // cm vòng eo
+  hip              Float?   // cm vòng mông
+  arm              Float?   // cm vòng tay
+  thigh            Float?   // cm vòng đùi
+  waterPercent     Float?   // % nước cơ thể
+  visceralFat      Float?   // chỉ số mỡ nội tạng
+  boneMineralKg    Float?   // kg khoáng chất xương
+  proteinKg        Float?   // kg protein cơ thể
+  skeletalMuscleKg Float?   // kg cơ xương
+  notes            String?
 
   @@index([date])
 }
 
-// Nhật ký calories theo ngày (phân tích bằng Gemini AI)
-model CalorieEntry {
-  id             String   @id @default(cuid())
-  date           DateTime @default(now())
-  imageThumbnail String?  // base64 ảnh thumbnail nhỏ để preview
-  foods          Json     // [{name, portion, calories}]
-  totalCalories  Int
-  notes          String?
-  createdAt      DateTime @default(now())
+// Nhật ký ăn uống (calories & macros)
+model FoodLog {
+  id                 String   @id @default(cuid())
+  date               DateTime @default(now())
+  name               String
+  servingDescription String?  // ví dụ: "3 quả trứng (~180g)"
+  calories           Float?   // kcal
+  protein            Float?   // g
+  fat                Float?   // g
+  carbs              Float?   // g
+  fiber              Float?   // g
+  healthyScore       Float?   // điểm healthy từ 0-10
+  mealType           String   @default("other") // breakfast, lunch, dinner, snack, other
+  notes              String?
 
   @@index([date])
+}
+
+// Mục tiêu dinh dưỡng theo ngày
+model NutritionGoal {
+  id          String   @id @default(cuid())
+  date        DateTime
+  calories    Float?   // kcal
+  protein     Float?   // g
+  fat         Float?   // g
+  carbs       Float?   // g
+  fiber       Float?   // g
+  waterGoalMl  Int?     // ml nước mục tiêu trong ngày
+  waterLogMl   Int?     @default(0) // ml nước đã uống trong ngày
+  caloriesOut  Int?     // calo tiêu thụ trong ngày
+  createdAt    DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([date])
+  @@index([date])
+}
+
+// Template mục tiêu dinh dưỡng (ngày đi tập / ngày nghỉ)
+model NutritionGoalTemplate {
+  id          String   @id @default(cuid())
+  type        String   @unique // "workout_day" | "rest_day"
+  name        String
+  calories    Float?
+  protein     Float?
+  fat         Float?
+  carbs       Float?
+  fiber       Float?
+  waterGoalMl Int?     @default(2000) // ml nước mục tiêu
+  updatedAt   DateTime @updatedAt
 }

@@ -23,7 +23,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV DATABASE_URL="file:./build.db"
+ENV DATABASE_URL="postgresql://user:pass@localhost:5432/gym"
 
 RUN npx prisma generate
 RUN npm run build
@@ -38,11 +38,10 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
-ENV DATABASE_URL="file:/app/data/gym.db"
+ENV DATABASE_URL="postgresql://user:pass@localhost:5432/gym"
 
 RUN addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 nextjs \
-  && mkdir -p /app/data \
   && chown -R nextjs:nodejs /app
 
 # Standalone Next.js (server.js + minimal node_modules cho runtime)

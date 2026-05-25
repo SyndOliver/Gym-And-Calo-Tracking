@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Dumbbell, BookOpen, Calendar, BarChart3, Flame } from "lucide-react";
+import { Home, Dumbbell, BookOpen, Calendar, BarChart3, Utensils } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/", label: "Trang chủ", icon: Home },
   { href: "/workout", label: "Tập", icon: Dumbbell },
   { href: "/exercises", label: "Bài tập", icon: BookOpen },
+  { href: "/food", label: "Dinh dưỡng", icon: Utensils },
   { href: "/calendar", label: "Lịch", icon: Calendar },
   { href: "/stats", label: "Thống kê", icon: BarChart3 },
-  { href: "/calories", label: "Calories", icon: Flame },
 ];
 
 export default function BottomNav() {
@@ -37,7 +37,7 @@ export default function BottomNav() {
                 href={item.href}
                 aria-current={isActive ? "page" : undefined}
                 className={cn(
-                  "tappable group relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 py-2 text-[10px] font-medium transition-colors",
+                  "tappable group relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-2 text-[11px] font-medium transition-colors",
                   isActive
                     ? "text-primary-foreground"
                     : "text-muted hover:text-foreground"
@@ -56,9 +56,7 @@ export default function BottomNav() {
                   )}
                   strokeWidth={isActive ? 2.4 : 2}
                 />
-                {isActive && (
-                  <span className="relative z-10 leading-tight text-[10px]">{item.label}</span>
-                )}
+                <span className="relative z-10 leading-tight">{item.label}</span>
               </Link>
             );
           })}

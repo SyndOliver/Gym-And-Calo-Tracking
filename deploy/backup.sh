@@ -15,7 +15,7 @@ mkdir -p "$BACKUP_DIR"
 
 echo "→ Backup database..."
 docker run --rm \
-  -v gym_data:/data \
+  -v pg_data:/data \
   -v "$(realpath "$BACKUP_DIR"):/backup" \
   alpine \
   tar czf "/backup/gym-${TIMESTAMP}.tar.gz" -C /data .

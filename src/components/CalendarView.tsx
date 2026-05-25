@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useState, useMemo } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Flame, Zap, TrendingUp, Loader2 } from "lucide-react";
 import { cn, formatLongDuration, getMuscleGroupInfo } from "@/lib/utils";
 import PageHeader from "./PageHeader";
+import { saveCaloriesOut } from "@/app/actions/food";
 
 type Item = {
   id: string;
@@ -28,11 +29,39 @@ function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export default function CalendarView({ items }: { items: Item[] }) {
+export default function CalendarView({
+  items,
+  foodCalsByDay,
+  caloriesOutByDay,
+}: {
+  items: Item[];
+  foodCalsByDay: Record<string, number>;
+  caloriesOutByDay: Record<string, number>;
+}) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selected, setSelected] = useState<string>(ymd(today));
+  const [calOutDraft, setCalOutDraft] = useState<Record<string, string>>({});
+  const [savingCalOut, setSavingCalOut] = useState(false);
+  const [calOutError, setCalOutError] = useState<string | null>(null);
+
+  async function handleSaveCalOut() {
+    const raw = calOutDraft[selected] ?? String(caloriesOutByDay[selected] ?? "");
+    const val = Number(raw);
+    if (!raw.trim() || !Number.isFinite(val) || val < 0) return;
+    setSavingCalOut(true);
+    setCalOutError(null);
+    try {
+      await saveCaloriesOut(selected, val);
+      // optimistic: update local cache key
+      caloriesOutByDay[selected] = Math.round(val);
+    } catch (e) {
+      setCalOutError(e instanceof Error ? e.message : "Không lưu được");
+    } finally {
+      setSavingCalOut(false);
+    }
+  }
 
   const byDay = useMemo(() => {
     const m = new Map<string, Item[]>();
@@ -148,6 +177,62 @@ export default function CalendarView({ items }: { items: Item[] }) {
             year: "numeric",
           })}
         </h2>
+
+        {/* Calories IN / OUT summary */}
+        <div className="card !p-3 grid grid-cols-2 gap-3">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-1.5 text-xs text-muted">
+              <Flame className="h-3.5 w-3.5 text-warning" />
+              Calories nạp vào
+            </div>
+            <div className="text-lg font-bold">
+              {foodCalsByDay[selected] ? `${Math.round(foodCalsByDay[selected])} kcal` : <span className="text-muted text-sm font-normal">Chưa ghi nhận</span>}
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5 text-xs text-muted">
+              <Zap className="h-3.5 w-3.5 text-success" />
+              Calories tiêu thụ
+            </div>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={20000}
+                className="!py-1 !px-2 text-sm w-24"
+                placeholder={String(caloriesOutByDay[selected] ?? "")}
+                value={calOutDraft[selected] ?? (caloriesOutByDay[selected] != null ? String(caloriesOutByDay[selected]) : "")}
+                onChange={(e) => setCalOutDraft((prev) => ({ ...prev, [selected]: e.target.value }))}
+              />
+              <button
+                type="button"
+                className="btn btn-primary !py-1 !px-2 text-xs"
+                onClick={handleSaveCalOut}
+                disabled={savingCalOut}
+              >
+                {savingCalOut ? <Loader2 className="h-3 w-3 animate-spin" /> : "Lưu"}
+              </button>
+            </div>
+            {calOutError && <p className="text-xs text-danger">{calOutError}</p>}
+          </div>
+        </div>
+
+        {/* Net calories */}
+        {(foodCalsByDay[selected] || caloriesOutByDay[selected]) && (
+          <div className="card !p-3 flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-primary" />
+            <span className="text-xs text-muted">Cân bằng năng lượng:</span>
+            <span className={cn(
+              "ml-auto font-bold text-sm",
+              (foodCalsByDay[selected] ?? 0) - (caloriesOutByDay[selected] ?? 0) > 0 ? "text-warning" : "text-success"
+            )}>
+              {(foodCalsByDay[selected] ?? 0) - (caloriesOutByDay[selected] ?? 0) > 0 ? "+" : ""}
+              {Math.round((foodCalsByDay[selected] ?? 0) - (caloriesOutByDay[selected] ?? 0))} kcal
+            </span>
+          </div>
+        )}
+
         {selectedItems.length === 0 ? (
           <div className="card text-center py-6 text-sm text-muted">
             Không có buổi tập nào trong ngày này

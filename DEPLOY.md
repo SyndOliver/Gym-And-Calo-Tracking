@@ -173,7 +173,7 @@ docker compose up -d --build        # rebuild + restart
 docker image prune -f               # dọn image cũ
 ```
 
-Data trong volume `gym_data` được giữ nguyên.
+Data trong volume `pg_data` được giữ nguyên.
 
 ---
 
@@ -183,7 +183,7 @@ Data trong volume `gym_data` được giữ nguyên.
 
 ```bash
 docker run --rm \
-  -v gym_data:/data \
+  -v pg_data:/data \
   -v $(pwd):/backup \
   alpine \
   tar czf /backup/gym-backup-$(date +%Y%m%d-%H%M).tar.gz -C /data .
@@ -194,7 +194,7 @@ File backup nằm cùng thư mục, đặt cron để chạy mỗi tối:
 ```bash
 crontab -e
 # Backup mỗi ngày lúc 3:00 sáng
-0 3 * * * cd /opt/gym-tracker && docker run --rm -v gym_data:/data -v /opt/backups:/backup alpine tar czf /backup/gym-$(date +\%Y\%m\%d).tar.gz -C /data . && find /opt/backups -name "gym-*.tar.gz" -mtime +30 -delete
+0 3 * * * cd /opt/gym-tracker && docker run --rm -v pg_data:/data -v /opt/backups:/backup alpine tar czf /backup/gym-$(date +\%Y\%m\%d).tar.gz -C /data . && find /opt/backups -name "gym-*.tar.gz" -mtime +30 -delete
 ```
 
 (Lệnh trên cũng tự xoá backup cũ hơn 30 ngày)
@@ -204,7 +204,7 @@ crontab -e
 ```bash
 docker compose down
 docker run --rm \
-  -v gym_data:/data \
+  -v pg_data:/data \
   -v $(pwd):/backup \
   alpine \
   sh -c "rm -rf /data/* && tar xzf /backup/gym-backup-YYYYMMDD-HHMM.tar.gz -C /data"
@@ -250,7 +250,7 @@ docker compose down -v
 docker compose exec gym-tracker sh
 
 # Xem dung lượng volume
-docker system df -v | grep gym_data
+docker system df -v | grep pg_data
 ```
 
 ---

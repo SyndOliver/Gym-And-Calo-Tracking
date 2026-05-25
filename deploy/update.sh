@@ -13,7 +13,7 @@ git pull --ff-only
 echo "→ Backup database trước khi update..."
 mkdir -p backups
 docker run --rm \
-  -v gym_data:/data \
+  -v pg_data:/data \
   -v "$(pwd)/backups:/backup" \
   alpine \
   tar czf "/backup/auto-$(date +%Y%m%d-%H%M).tar.gz" -C /data .
