@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -114,6 +114,19 @@ model BodyMetric {
   arm       Float?   // cm vòng tay
   thigh     Float?   // cm vòng đùi
   notes     String?
+
+  @@index([date])
+}
+
+// Nhật ký calories theo ngày (phân tích bằng Gemini AI)
+model CalorieEntry {
+  id             String   @id @default(cuid())
+  date           DateTime @default(now())
+  imageThumbnail String?  // base64 ảnh thumbnail nhỏ để preview
+  foods          Json     // [{name, portion, calories}]
+  totalCalories  Int
+  notes          String?
+  createdAt      DateTime @default(now())
 
   @@index([date])
 }

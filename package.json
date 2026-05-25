@@ -13,6 +13,7 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^5.22.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
