@@ -96,3 +96,57 @@ export function calculate1RM(weight: number, reps: number): number {
   if (reps === 1) return weight;
   return Math.round(weight * (1 + reps / 30));
 }
+
+export type TrendDirection = "up" | "down" | "stable";
+
+export type TrendResult = {
+  direction: TrendDirection;
+  percentage: number;
+  currentAvg: number;
+  previousAvg: number;
+};
+
+/**
+ * Calculate trend by comparing average of last N values vs previous N values.
+ * @param values - Array of numeric values ordered chronologically (oldest first)
+ * @param compareLast - Number of recent items to compare (default 3)
+ * @param stableThreshold - Percentage threshold to be considered "stable" (default 2)
+ */
+export function calculateTrend(
+  values: number[],
+  compareLast: number = 3,
+  stableThreshold: number = 2
+): TrendResult {
+  if (values.length < 2) {
+    return { direction: "stable", percentage: 0, currentAvg: values[0] ?? 0, previousAvg: values[0] ?? 0 };
+  }
+
+  const n = Math.min(compareLast, Math.floor(values.length / 2));
+  const recent = values.slice(-n);
+  const previous = values.slice(-n * 2, -n);
+
+  if (previous.length === 0) {
+    return { direction: "stable", percentage: 0, currentAvg: avg(recent), previousAvg: avg(recent) };
+  }
+
+  const currentAvg = avg(recent);
+  const previousAvg = avg(previous);
+
+  if (previousAvg === 0) {
+    return { direction: currentAvg > 0 ? "up" : "stable", percentage: 0, currentAvg, previousAvg };
+  }
+
+  const percentage = Math.round(((currentAvg - previousAvg) / previousAvg) * 1000) / 10;
+
+  let direction: TrendDirection = "stable";
+  if (percentage > stableThreshold) direction = "up";
+  else if (percentage < -stableThreshold) direction = "down";
+
+  return { direction, percentage: Math.abs(percentage), currentAvg, previousAvg };
+}
+
+function avg(arr: number[]): number {
+  if (arr.length === 0) return 0;
+  return Math.round((arr.reduce((s, v) => s + v, 0) / arr.length) * 10) / 10;
+}
+

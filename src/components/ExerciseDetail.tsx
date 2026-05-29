@@ -12,22 +12,32 @@ import {
   Trophy,
   Save,
   X,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  BarChart3,
+  History,
+  Dumbbell,
 } from "lucide-react";
 import PageHeader from "./PageHeader";
 import {
   calculate1RM,
+  calculateTrend,
   calculateVolume,
   EQUIPMENT_LABELS,
   formatRelativeDay,
   getMuscleGroupInfo,
   MUSCLE_GROUPS,
+  type TrendResult,
 } from "@/lib/utils";
 import { parseVideoUrl, youtubeSearchUrl } from "@/lib/video";
 import { deleteExercise, updateExercise } from "@/app/actions/exercise";
 import VideoModal from "./VideoModal";
+import ExerciseProgressAI from "./ExerciseProgressAI";
 import {
+  Area,
+  ComposedChart,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -63,6 +73,8 @@ type Set = {
   };
 };
 
+type Tab = "progress" | "history";
+
 export default function ExerciseDetail({
   exercise,
   sets,
@@ -74,6 +86,7 @@ export default function ExerciseDetail({
   const [, startTransition] = useTransition();
   const [showVideo, setShowVideo] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>("progress");
 
   const info = getMuscleGroupInfo(exercise.muscleGroup);
   const videoInfo = parseVideoUrl(exercise.videoUrl);
@@ -97,19 +110,38 @@ export default function ExerciseDetail({
     0
   );
 
-  // Best set per workout for chart (max weight set)
+  // Per-workout data for chart (volume + e1rm + max weight)
   const chartData = useMemo(() => {
-    const byWorkout = new Map<string, { date: Date; e1rm: number; weight: number }>();
+    const byWorkout = new Map<
+      string,
+      {
+        date: Date;
+        e1rm: number;
+        weight: number;
+        volume: number;
+        totalSets: number;
+      }
+    >();
     for (const s of sets) {
       if (!s.weight || !s.reps) continue;
       const wid = s.workoutExercise.workout.id;
       const e1rm = calculate1RM(s.weight, s.reps);
+      const vol = s.weight * s.reps;
       const cur = byWorkout.get(wid);
-      if (!cur || e1rm > cur.e1rm) {
+      if (cur) {
+        if (e1rm > cur.e1rm) {
+          cur.e1rm = e1rm;
+          cur.weight = s.weight;
+        }
+        cur.volume += vol;
+        cur.totalSets++;
+      } else {
         byWorkout.set(wid, {
           date: s.workoutExercise.workout.startedAt,
           e1rm,
           weight: s.weight,
+          volume: vol,
+          totalSets: 1,
         });
       }
     }
@@ -123,8 +155,19 @@ export default function ExerciseDetail({
         }),
         e1rm: d.e1rm,
         weight: d.weight,
+        volume: Math.round(d.volume),
       }));
   }, [sets]);
+
+  // Trend calculations
+  const trends = useMemo(() => {
+    if (chartData.length < 2) return null;
+    return {
+      volume: calculateTrend(chartData.map((d) => d.volume)),
+      e1rm: calculateTrend(chartData.map((d) => d.e1rm)),
+      weight: calculateTrend(chartData.map((d) => d.weight)),
+    };
+  }, [chartData]);
 
   function handleDelete() {
     if (!confirm(`Xoá bài tập "${exercise.name}"? Hành động không thể hoàn tác.`))
@@ -249,86 +292,182 @@ export default function ExerciseDetail({
         </section>
       )}
 
-      {/* Chart */}
-      {chartData.length >= 2 && (
-        <section className="card space-y-3">
-          <h2 className="text-base font-semibold flex items-center gap-2">
-            <Trophy className="h-4 w-4 text-yellow-400" /> Tiến triển sức mạnh (e1RM)
-          </h2>
-          <div className="h-48 -mx-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                <CartesianGrid stroke="rgb(38 43 60)" strokeDasharray="3 3" vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fill: "rgb(148 156 178)", fontSize: 10 }}
-                  stroke="rgb(38 43 60)"
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fill: "rgb(148 156 178)", fontSize: 10 }}
-                  stroke="rgb(38 43 60)"
-                  tickLine={false}
-                  axisLine={false}
-                  width={40}
-                  domain={["dataMin - 5", "dataMax + 5"]}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "rgb(17 20 31)",
-                    border: "1px solid rgb(38 43 60)",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                  labelStyle={{ color: "rgb(148 156 178)" }}
-                  formatter={(v: number, name: string) => [
-                    `${v} kg`,
-                    name === "e1rm" ? "e1RM" : "Cao nhất",
-                  ]}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="e1rm"
-                  stroke="rgb(168 85 247)"
-                  strokeWidth={2.5}
-                  dot={{ fill: "rgb(168 85 247)", r: 3 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
+      {/* Tab Navigation */}
+      {totalSets > 0 && (
+        <div className="flex gap-1 p-1 rounded-xl bg-surface/60 border border-border/50">
+          <button
+            onClick={() => setActiveTab("progress")}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm font-semibold transition-all ${
+              activeTab === "progress"
+                ? "bg-primary/15 text-primary border border-primary/25 shadow-sm shadow-primary/10"
+                : "text-muted hover:text-foreground"
+            }`}
+          >
+            <BarChart3 className="h-4 w-4" />
+            Tiến triển
+          </button>
+          <button
+            onClick={() => setActiveTab("history")}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm font-semibold transition-all ${
+              activeTab === "history"
+                ? "bg-primary/15 text-primary border border-primary/25 shadow-sm shadow-primary/10"
+                : "text-muted hover:text-foreground"
+            }`}
+          >
+            <History className="h-4 w-4" />
+            Lịch sử ({sets.length})
+          </button>
+        </div>
       )}
 
-      {/* History */}
-      {sets.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-base font-semibold">Lịch sử ({sets.length} sets)</h2>
-          <div className="space-y-1.5">
-            {sets.slice(0, 30).map((s) => (
-              <Link
-                key={s.id}
-                href={`/workout/${s.workoutExercise.workout.id}`}
-                className="card !p-2.5 flex items-center gap-3 hover:border-primary/40 transition-colors"
-              >
-                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-surface text-xs font-semibold shrink-0">
-                  {s.setNumber}
+      {/* Progress Tab */}
+      {activeTab === "progress" && totalSets > 0 && (
+        <>
+          {/* Trend Cards */}
+          {trends && (
+            <section className="grid grid-cols-3 gap-2">
+              <TrendCard label="Volume" trend={trends.volume} unit="kg" />
+              <TrendCard label="e1RM" trend={trends.e1rm} unit="kg" />
+              <TrendCard label="Max" trend={trends.weight} unit="kg" />
+            </section>
+          )}
+
+          {/* Dual-Axis Chart */}
+          {chartData.length >= 2 && (
+            <section className="card space-y-3">
+              <h2 className="text-base font-semibold flex items-center gap-2">
+                <Trophy className="h-4 w-4 text-yellow-400" /> Tiến triển sức mạnh
+              </h2>
+              <div className="flex items-center gap-4 text-[11px] text-muted">
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block h-2 w-5 rounded-full bg-indigo-500 opacity-60" />
+                  Volume (kg)
                 </span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold">
-                    {s.weight ?? "—"} kg × {s.reps ?? "—"} reps
-                    {s.weight && s.reps && (
-                      <span className="text-xs text-muted font-normal ml-1.5">
-                        (e1RM {calculate1RM(s.weight, s.reps)} kg)
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-muted truncate">
-                    {s.workoutExercise.workout.name} • {formatRelativeDay(s.workoutExercise.workout.startedAt)}
-                  </p>
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block h-2 w-5 rounded-full bg-purple-500" />
+                  e1RM (kg)
+                </span>
+              </div>
+              <div className="h-56 -mx-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                    <defs>
+                      <linearGradient id="volumeProgressGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="rgb(99 102 241)" stopOpacity={0.35} />
+                        <stop offset="100%" stopColor="rgb(99 102 241)" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid stroke="rgb(38 43 60)" strokeDasharray="3 3" vertical={false} />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fill: "rgb(148 156 178)", fontSize: 10 }}
+                      stroke="rgb(38 43 60)"
+                      tickLine={false}
+                    />
+                    <YAxis
+                      yAxisId="volume"
+                      orientation="left"
+                      tick={{ fill: "rgb(148 156 178)", fontSize: 10 }}
+                      stroke="rgb(38 43 60)"
+                      tickLine={false}
+                      axisLine={false}
+                      width={45}
+                      tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)}
+                    />
+                    <YAxis
+                      yAxisId="e1rm"
+                      orientation="right"
+                      tick={{ fill: "rgb(168 85 247)", fontSize: 10 }}
+                      stroke="rgb(38 43 60)"
+                      tickLine={false}
+                      axisLine={false}
+                      width={40}
+                      domain={["dataMin - 5", "dataMax + 5"]}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: "rgb(17 20 31)",
+                        border: "1px solid rgb(38 43 60)",
+                        borderRadius: 12,
+                        fontSize: 12,
+                        boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+                      }}
+                      labelStyle={{ color: "rgb(148 156 178)", marginBottom: 4 }}
+                      formatter={(v: number, name: string) => [
+                        `${v.toLocaleString("vi-VN")} kg`,
+                        name === "volume" ? "Volume" : "e1RM",
+                      ]}
+                    />
+                    <Area
+                      yAxisId="volume"
+                      type="monotone"
+                      dataKey="volume"
+                      stroke="rgb(99 102 241)"
+                      strokeWidth={1.5}
+                      fill="url(#volumeProgressGrad)"
+                      strokeOpacity={0.7}
+                    />
+                    <Line
+                      yAxisId="e1rm"
+                      type="monotone"
+                      dataKey="e1rm"
+                      stroke="rgb(168 85 247)"
+                      strokeWidth={2.5}
+                      dot={{ fill: "rgb(168 85 247)", r: 3, strokeWidth: 0 }}
+                      activeDot={{ r: 5, fill: "rgb(168 85 247)", stroke: "rgb(17 20 31)", strokeWidth: 2 }}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+          )}
+
+          {chartData.length < 2 && (
+            <section className="card text-center py-8 space-y-2">
+              <Dumbbell className="h-8 w-8 text-muted mx-auto opacity-50" />
+              <p className="text-sm text-muted">
+                Cần ít nhất 2 buổi tập để hiển thị biểu đồ tiến triển
+              </p>
+              <p className="text-xs text-muted/70">
+                {chartData.length === 1
+                  ? "Thêm 1 buổi tập nữa để xem biểu đồ"
+                  : "Bắt đầu tập để theo dõi tiến độ"}
+              </p>
+            </section>
+          )}
+
+          {/* AI Analysis */}
+          <ExerciseProgressAI exerciseId={exercise.id} />
+        </>
+      )}
+
+      {/* History Tab */}
+      {activeTab === "history" && sets.length > 0 && (
+        <section className="space-y-1.5">
+          {sets.slice(0, 50).map((s) => (
+            <Link
+              key={s.id}
+              href={`/workout/${s.workoutExercise.workout.id}`}
+              className="card !p-2.5 flex items-center gap-3 hover:border-primary/40 transition-colors"
+            >
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-surface text-xs font-semibold shrink-0">
+                {s.setNumber}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold">
+                  {s.weight ?? "—"} kg × {s.reps ?? "—"} reps
+                  {s.weight && s.reps && (
+                    <span className="text-xs text-muted font-normal ml-1.5">
+                      (e1RM {calculate1RM(s.weight, s.reps)} kg)
+                    </span>
+                  )}
                 </div>
-              </Link>
-            ))}
-          </div>
+                <p className="text-[11px] text-muted truncate">
+                  {s.workoutExercise.workout.name} • {formatRelativeDay(s.workoutExercise.workout.startedAt)}
+                </p>
+              </div>
+            </Link>
+          ))}
         </section>
       )}
 
@@ -358,6 +497,70 @@ export default function ExerciseDetail({
   );
 }
 
+// ===================== TREND CARD =====================
+
+function TrendCard({
+  label,
+  trend,
+  unit,
+}: {
+  label: string;
+  trend: TrendResult;
+  unit: string;
+}) {
+  const iconClass = "h-4 w-4";
+  const isUp = trend.direction === "up";
+  const isDown = trend.direction === "down";
+  const isStable = trend.direction === "stable";
+
+  const colorMap = {
+    up: {
+      text: "text-emerald-400",
+      bg: "bg-emerald-500/10",
+      border: "border-emerald-500/20",
+      icon: <TrendingUp className={`${iconClass} text-emerald-400`} />,
+    },
+    down: {
+      text: "text-red-400",
+      bg: "bg-red-500/10",
+      border: "border-red-500/20",
+      icon: <TrendingDown className={`${iconClass} text-red-400`} />,
+    },
+    stable: {
+      text: "text-yellow-400",
+      bg: "bg-yellow-500/10",
+      border: "border-yellow-500/20",
+      icon: <Minus className={`${iconClass} text-yellow-400`} />,
+    },
+  };
+
+  const colors = colorMap[trend.direction];
+
+  return (
+    <div className={`card !p-3 ${colors.bg} ${colors.border} transition-all`}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[11px] text-muted font-medium uppercase tracking-wider">{label}</span>
+        {colors.icon}
+      </div>
+      <div className={`text-lg font-bold tabular ${colors.text}`}>
+        {trend.percentage > 0 ? (
+          <>
+            {isUp ? "+" : isDown ? "-" : ""}
+            {trend.percentage}%
+          </>
+        ) : (
+          "—"
+        )}
+      </div>
+      <div className="text-[10px] text-muted mt-0.5">
+        TB: {trend.currentAvg.toLocaleString("vi-VN")} {unit}
+      </div>
+    </div>
+  );
+}
+
+// ===================== STAT BOX =====================
+
 function StatBox({
   label,
   value,
@@ -374,6 +577,8 @@ function StatBox({
     </div>
   );
 }
+
+// ===================== EDIT MODAL =====================
 
 function EditExerciseModal({
   exercise,

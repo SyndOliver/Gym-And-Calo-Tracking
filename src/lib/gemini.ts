@@ -543,3 +543,103 @@ Trả về DUY NHẤT JSON hợp lệ, KHÔNG có markdown:
     restDay: parsePlan(parsed.restDay as Record<string, unknown>),
   };
 }
+
+// ===================== EXERCISE PROGRESS ANALYSIS =====================
+
+export type ExerciseSessionData = {
+  date: string; // dd/MM/yyyy
+  volume: number; // weight × reps summed across sets
+  e1rm: number; // best estimated 1RM in the session
+  maxWeight: number;
+  totalSets: number;
+  totalReps: number;
+};
+
+export type ExerciseAnalysisResult = {
+  summary: string;
+  suggestions: string[];
+  warnings: string[];
+};
+
+export async function analyzeExerciseData(
+  exerciseName: string,
+  sessions: ExerciseSessionData[]
+): Promise<ExerciseAnalysisResult> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error("GROQ_API_KEY chưa được cấu hình");
+
+  const proxyUrl =
+    process.env.HTTPS_PROXY ||
+    process.env.HTTP_PROXY ||
+    process.env.https_proxy ||
+    process.env.http_proxy;
+
+  let fetchFn: typeof globalThis.fetch | undefined;
+  if (proxyUrl) {
+    const proxyAgent = new ProxyAgent(proxyUrl);
+    fetchFn = (input, init) =>
+      globalThis.fetch(input, { ...(init ?? {}), dispatcher: proxyAgent } as RequestInit);
+  }
+
+  const groq = new Groq({ apiKey, ...(fetchFn ? { fetch: fetchFn } : {}) });
+  const model = process.env.GROQ_MODEL ?? "meta-llama/llama-4-scout-17b-16e-instruct";
+
+  // Build data table for the prompt
+  const dataTable = sessions
+    .map(
+      (s) =>
+        `${s.date} | Volume: ${s.volume}kg | e1RM: ${s.e1rm}kg | Max: ${s.maxWeight}kg | ${s.totalSets} sets × ${s.totalReps} reps`
+    )
+    .join("\n");
+
+  const totalSessions = sessions.length;
+  const firstDate = sessions[0]?.date ?? "N/A";
+  const lastDate = sessions[sessions.length - 1]?.date ?? "N/A";
+
+  const prompt = `Bạn là huấn luyện viên thể hình chuyên nghiệp. Hãy phân tích tiến độ bài tập "${exerciseName}" dựa trên dữ liệu sau.
+
+## Dữ liệu (${totalSessions} buổi tập, từ ${firstDate} đến ${lastDate}):
+${dataTable}
+
+## Yêu cầu phân tích:
+1. **summary**: Viết 1-2 câu nhận xét tổng quan về xu hướng hiệu suất (tăng/giảm/plateau). Dùng ngôn ngữ tích cực, khuyến khích. Viết bằng tiếng Việt.
+2. **suggestions**: Đưa ra 2-3 gợi ý cụ thể dựa trên nguyên tắc progressive overload:
+   - Nếu volume đang tăng đều: khuyên tiếp tục
+   - Nếu plateau (không thay đổi 3+ buổi): gợi ý tăng reps, weight, hoặc sets
+   - Nếu giảm: khuyên kiểm tra recovery, sleep, nutrition
+   - Gợi ý con số cụ thể nếu có thể (VD: "thử tăng 2.5kg cho set đầu tiên")
+3. **warnings**: Cảnh báo nếu phát hiện:
+   - Volume giảm liên tục
+   - Không tập bài này > 2 tuần
+   - Tần suất tập quá dày hoặc quá thưa
+   - Nếu không có cảnh báo, trả mảng rỗng
+
+Trả về DUY NHẤT JSON hợp lệ, KHÔNG markdown, KHÔNG backtick:
+{
+  "summary": "...",
+  "suggestions": ["...", "..."],
+  "warnings": ["..."]
+}`;
+
+  const completion = await groq.chat.completions.create({
+    model,
+    temperature: 0.3,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const text = (completion.choices[0]?.message?.content ?? "").trim();
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("AI không trả về phân tích hợp lệ. Vui lòng thử lại.");
+
+  const parsed = JSON.parse(jsonMatch[0]);
+
+  return {
+    summary: String(parsed.summary ?? "Không đủ dữ liệu để phân tích."),
+    suggestions: Array.isArray(parsed.suggestions)
+      ? parsed.suggestions.map((s: unknown) => String(s))
+      : [],
+    warnings: Array.isArray(parsed.warnings)
+      ? parsed.warnings.map((w: unknown) => String(w))
+      : [],
+  };
+}

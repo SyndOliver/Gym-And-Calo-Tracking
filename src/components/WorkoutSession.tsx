@@ -115,14 +115,14 @@ export default function WorkoutSession({
   }, [isFinished, workout.startedAt]);
 
   const totalSets = workout.exercises.reduce(
-    (s, e) => s + e.sets.filter((x) => x.isCompleted).length,
+    (s, e) => s + e.sets.filter((x) => x.weight !== null && x.reps !== null).length,
     0
   );
   const totalVolume = workout.exercises.reduce(
     (s, e) =>
       s +
       e.sets
-        .filter((x) => x.isCompleted)
+        .filter((x) => x.weight !== null && x.reps !== null)
         .reduce((ss, set) => ss + calculateVolume(set.reps, set.weight), 0),
     0
   );
@@ -396,7 +396,7 @@ function ExerciseCard({
   }
 
   const totalVolume = we.sets
-    .filter((s) => s.isCompleted)
+    .filter((s) => s.weight !== null && s.reps !== null)
     .reduce((sum, s) => sum + calculateVolume(s.reps, s.weight), 0);
 
   // Reps phổ biến hiện tại để hiển thị placeholder
@@ -526,7 +526,7 @@ function ExerciseCard({
           <span>Set</span>
           <span>Kg</span>
           <span>Reps</span>
-          <span className="text-center">✓</span>
+          <span className="text-center flex justify-center"><Clock className="h-3.5 w-3.5 text-muted" /></span>
           <span></span>
         </div>
         {we.sets.length === 0 && (
@@ -611,16 +611,14 @@ function SetRow({
     });
   }
 
-  function toggleComplete() {
-    const next = !set.isCompleted;
+  function startRestTimer() {
     startTransition(async () => {
       await updateSet(set.id, {
-        isCompleted: next,
         reps: reps === "" ? null : Number(reps),
         weight: weight === "" ? null : Number(weight),
       });
       router.refresh();
-      if (next) onComplete();
+      onComplete(); // Kích hoạt bộ đếm ngược thời gian nghỉ
     });
   }
 
@@ -631,17 +629,19 @@ function SetRow({
     });
   }
 
+  const hasData = reps !== "" && weight !== "";
+
   return (
     <div
       className={cn(
         "grid grid-cols-[28px_1fr_1fr_44px_36px] items-center gap-1.5 rounded-lg px-1 py-1 transition-colors",
-        set.isCompleted && "bg-success/10"
+        hasData && "bg-success/5"
       )}
     >
       <span
         className={cn(
-          "flex h-6 w-6 items-center justify-center rounded-md text-xs font-semibold",
-          set.isCompleted ? "bg-success/30 text-success" : "bg-surface text-muted"
+          "flex h-6 w-6 items-center justify-center rounded-md text-xs font-semibold transition-colors",
+          hasData ? "bg-success/30 text-success" : "bg-surface text-muted"
         )}
       >
         {set.setNumber}
@@ -670,16 +670,13 @@ function SetRow({
         className="!py-1.5 !px-2 text-center text-sm"
       />
       <button
-        onClick={toggleComplete}
+        type="button"
+        onClick={startRestTimer}
         disabled={isFinished}
-        className={cn(
-          "flex h-8 w-11 items-center justify-center rounded-md transition-colors",
-          set.isCompleted
-            ? "bg-success text-white"
-            : "border border-border text-muted hover:border-success hover:text-success"
-        )}
+        className="flex h-8 w-11 items-center justify-center rounded-md border border-border text-muted hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
+        title="Bắt đầu nghỉ"
       >
-        <Check className="h-4 w-4" strokeWidth={3} />
+        <Clock className="h-4 w-4" />
       </button>
       {!isFinished ? (
         <button

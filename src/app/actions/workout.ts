@@ -49,10 +49,25 @@ export async function finishWorkout(workoutId: string) {
   if (!w) throw new Error("Không tìm thấy buổi tập");
   const finishedAt = new Date();
   const durationSec = Math.round((finishedAt.getTime() - new Date(w.startedAt).getTime()) / 1000);
+
+  // Tự động hoàn thành tất cả các set của buổi tập này
+  await prisma.setEntry.updateMany({
+    where: {
+      workoutExercise: {
+        workoutId: workoutId,
+      },
+    },
+    data: {
+      isCompleted: true,
+      completedAt: finishedAt,
+    },
+  });
+
   await prisma.workout.update({
     where: { id: workoutId },
     data: { finishedAt, durationSec },
   });
+
   revalidatePath("/");
   revalidatePath("/workout");
   revalidatePath("/stats");
