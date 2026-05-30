@@ -176,3 +176,17 @@ model NutritionGoalTemplate {
   waterGoalMl Int?     @default(2000) // ml nước mục tiêu
   updatedAt   DateTime @updatedAt
 }
+
+// Món ăn yêu thích để thêm nhanh
+model FavoriteMeal {
+  id                 String   @id @default(cuid())
+  name               String
+  servingDescription String?
+  calories           Float?
+  protein            Float?
+  fat                Float?
+  carbs              Float?
+  fiber              Float?
+  mealType           String   @default("other")
+  createdAt          DateTime @default(now())
+}

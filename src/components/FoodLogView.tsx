@@ -24,8 +24,9 @@ import {
   Settings2,
   Minus,
   Heart,
+  Star,
 } from "lucide-react";
-import { addFoodLog, analyzeFood, analyzeFoodByText, deleteFoodLog, saveNutritionGoal, logWater, saveNutritionGoalTemplate } from "@/app/actions/food";
+import { addFoodLog, analyzeFood, analyzeFoodByText, deleteFoodLog, saveNutritionGoal, logWater, saveNutritionGoalTemplate, addFavoriteMeal, deleteFavoriteMeal } from "@/app/actions/food";
 import { suggestNutritionGoalFromLatest } from "@/app/actions/body";
 import { cn, formatDateTime } from "@/lib/utils";
 
@@ -243,16 +244,30 @@ async function prepareImageForAI(file: File): Promise<{
   };
 }
 
+type FavoriteMealItem = {
+  id: string;
+  name: string;
+  servingDescription: string | null;
+  calories: number | null;
+  protein: number | null;
+  fat: number | null;
+  carbs: number | null;
+  fiber: number | null;
+  mealType: string;
+};
+
 export default function FoodLogView({
   initialLogs,
   initialDateISO,
   initialGoal,
   initialTemplates,
+  initialFavorites = [],
 }: {
   initialLogs: FoodLog[];
   initialDateISO: string;
   initialGoal: NutritionGoal | null;
   initialTemplates: NutritionGoalTemplate[];
+  initialFavorites?: FavoriteMealItem[];
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -307,6 +322,10 @@ export default function FoodLogView({
   const [waterLog, setWaterLog] = useState(initialGoal?.waterLogMl ?? 0);
   const waterGoal = initialGoal?.waterGoalMl ?? 2000;
   const [isLoggingWater, setIsLoggingWater] = useState(false);
+
+  // Favorites
+  const [favorites, setFavorites] = useState<FavoriteMealItem[]>(initialFavorites);
+  const [savingFavId, setSavingFavId] = useState<string | null>(null);
 
   // AI goal suggestion
   const [isAiSuggestingGoal, setIsAiSuggestingGoal] = useState(false);
@@ -1181,6 +1200,64 @@ export default function FoodLogView({
         </div>
       )}
 
+      {/* ⭐ Favorites section */}
+      {favorites.length > 0 && (
+        <section className="card space-y-3">
+          <h2 className="text-base font-semibold inline-flex items-center gap-2">
+            <Star className="h-4 w-4 text-yellow-400" />
+            Món yêu thích
+          </h2>
+          <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-3 sm:-mx-4 px-3 sm:px-4 pb-1">
+            {favorites.map((fav) => (
+              <button
+                key={fav.id}
+                type="button"
+                className="group relative flex-shrink-0 rounded-xl border border-border bg-surface/50 hover:bg-surface hover:border-yellow-500/40 p-2.5 text-left transition-all min-w-[140px] max-w-[180px]"
+                onClick={() => {
+                  setDraft({
+                    name: fav.name,
+                    servingDescription: fav.servingDescription ?? "",
+                    calories: fav.calories != null ? String(fav.calories) : "",
+                    protein: fav.protein != null ? String(fav.protein) : "",
+                    fat: fav.fat != null ? String(fav.fat) : "",
+                    carbs: fav.carbs != null ? String(fav.carbs) : "",
+                    fiber: fav.fiber != null ? String(fav.fiber) : "",
+                    healthyScore: "",
+                  });
+                  setMealType(fav.mealType || "other");
+                  setIngredients([]);
+                  setAiBaseWeight(null);
+                  setAiBaseNutrition(null);
+                  setWeightOverride("");
+                }}
+              >
+                <button
+                  type="button"
+                  className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 h-5 w-5 rounded-full bg-danger/20 text-danger flex items-center justify-center transition-opacity hover:bg-danger/40"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    if (!confirm(`Xóa "${fav.name}" khỏi yêu thích?`)) return;
+                    setSavingFavId(fav.id);
+                    try {
+                      await deleteFavoriteMeal(fav.id);
+                      setFavorites((prev) => prev.filter((f) => f.id !== fav.id));
+                    } catch { /* ignore */ }
+                    setSavingFavId(null);
+                  }}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+                <div className="text-sm font-medium truncate">{fav.name}</div>
+                <div className="text-[11px] text-muted mt-0.5">
+                  {fav.calories != null ? `${Math.round(fav.calories)} kcal` : "—"}
+                  {fav.protein != null ? ` · ${Math.round(fav.protein)}g P` : ""}
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="card space-y-3 card-glow">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -1598,18 +1675,65 @@ export default function FoodLogView({
                     <div className="text-xs text-muted mt-0.5">{formatDateTime(log.date)}</div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(log.id)}
-                    disabled={deletingId === log.id}
-                    className="btn btn-ghost btn-icon flex-shrink-0 !h-7 !w-7 !text-muted hover:!text-danger"
-                  >
-                    {deletingId === log.id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-3.5 w-3.5" />
-                    )}
-                  </button>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      type="button"
+                      title="Lưu yêu thích"
+                      disabled={savingFavId === log.id}
+                      className={cn(
+                        "btn btn-ghost btn-icon !h-7 !w-7",
+                        favorites.some((f) => f.name === log.name)
+                          ? "!text-yellow-400"
+                          : "!text-muted hover:!text-yellow-400"
+                      )}
+                      onClick={async () => {
+                        if (favorites.some((f) => f.name === log.name)) return;
+                        setSavingFavId(log.id);
+                        try {
+                          const meal = await addFavoriteMeal({
+                            name: log.name,
+                            servingDescription: log.servingDescription ?? undefined,
+                            calories: log.calories ?? undefined,
+                            protein: log.protein ?? undefined,
+                            fat: log.fat ?? undefined,
+                            carbs: log.carbs ?? undefined,
+                            fiber: log.fiber ?? undefined,
+                            mealType: log.mealType,
+                          });
+                          setFavorites((prev) => [{
+                            id: meal.id,
+                            name: meal.name,
+                            servingDescription: meal.servingDescription,
+                            calories: meal.calories,
+                            protein: meal.protein,
+                            fat: meal.fat,
+                            carbs: meal.carbs,
+                            fiber: meal.fiber,
+                            mealType: meal.mealType,
+                          }, ...prev]);
+                        } catch { /* ignore */ }
+                        setSavingFavId(null);
+                      }}
+                    >
+                      {savingFavId === log.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Star className={cn("h-3.5 w-3.5", favorites.some((f) => f.name === log.name) && "fill-yellow-400")} />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(log.id)}
+                      disabled={deletingId === log.id}
+                      className="btn btn-ghost btn-icon !h-7 !w-7 !text-muted hover:!text-danger"
+                    >
+                      {deletingId === log.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 {log.servingDescription && (

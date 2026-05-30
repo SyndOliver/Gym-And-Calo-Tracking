@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getPreviousSetsMap } from "@/app/actions/workout";
 import WorkoutSession from "@/components/WorkoutSession";
 
 export const dynamic = "force-dynamic";
@@ -25,5 +26,15 @@ export default async function WorkoutPage({ params }: { params: Promise<{ id: st
 
   if (!workout) notFound();
 
-  return <WorkoutSession workout={workout} allExercises={exercises} />;
+  // Lấy dữ liệu sets buổi tập trước cho gợi ý placeholder
+  const exerciseIds = workout.exercises.map((we) => we.exercise.id);
+  const previousSetsMap = await getPreviousSetsMap(exerciseIds, id);
+
+  return (
+    <WorkoutSession
+      workout={workout}
+      allExercises={exercises}
+      previousSetsMap={previousSetsMap}
+    />
+  );
 }

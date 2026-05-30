@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, X, Play, Loader2, GripVertical } from "lucide-react";
+import { Plus, Trash2, X, Play, Loader2, GripVertical, Pencil } from "lucide-react";
 import { cn, getMuscleGroupInfo, MUSCLE_GROUPS } from "@/lib/utils";
-import { createTemplate, deleteTemplate } from "@/app/actions/template";
+import { createTemplate, deleteTemplate, updateTemplate } from "@/app/actions/template";
 import { startWorkoutFromTemplate } from "@/app/actions/workout";
 import { useActiveWorkout } from "./ActiveWorkoutProvider";
 import PageHeader from "./PageHeader";
@@ -45,6 +45,7 @@ export default function TemplatesView({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [showCreate, setShowCreate] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [startingId, setStartingId] = useState<string | null>(null);
   const { setActiveWorkoutId } = useActiveWorkout();
 
@@ -107,12 +108,22 @@ export default function TemplatesView({
                     })}
                   </div>
                 </div>
-                <button
-                  onClick={() => handleDelete(t.id, t.name)}
-                  className="btn btn-ghost btn-icon !text-muted hover:!text-danger shrink-0"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => setEditingTemplate(t)}
+                    className="btn btn-ghost btn-icon !text-muted hover:!text-primary"
+                    title="Sửa template"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(t.id, t.name)}
+                    className="btn btn-ghost btn-icon !text-muted hover:!text-danger"
+                    title="Xoá template"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
 
               <ul className="space-y-1">
@@ -151,25 +162,36 @@ export default function TemplatesView({
       </section>
 
       {showCreate && (
-        <CreateTemplateModal exercises={exercises} onClose={() => setShowCreate(false)} />
+        <TemplateModal exercises={exercises} onClose={() => setShowCreate(false)} />
+      )}
+      {editingTemplate && (
+        <TemplateModal
+          exercises={exercises}
+          template={editingTemplate}
+          onClose={() => setEditingTemplate(null)}
+        />
       )}
     </div>
   );
 }
 
-function CreateTemplateModal({
+function TemplateModal({
   exercises,
   onClose,
+  template,
 }: {
   exercises: Exercise[];
   onClose: () => void;
+  template?: Template;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [emoji, setEmoji] = useState("💪");
-  const [picked, setPicked] = useState<string[]>([]);
+  const [name, setName] = useState(template?.name ?? "");
+  const [description, setDescription] = useState(template?.description ?? "");
+  const [emoji, setEmoji] = useState(template?.emoji ?? "💪");
+  const [picked, setPicked] = useState<string[]>(
+    template?.exercises.map((e) => e.exercise.id) ?? []
+  );
   const [q, setQ] = useState("");
   const [group, setGroup] = useState<string>("all");
 
@@ -199,12 +221,21 @@ function CreateTemplateModal({
     e.preventDefault();
     if (!name.trim() || picked.length === 0) return;
     startTransition(async () => {
-      await createTemplate({
-        name: name.trim(),
-        description: description.trim() || undefined,
-        emoji,
-        exerciseIds: picked,
-      });
+      if (template) {
+        await updateTemplate(template.id, {
+          name: name.trim(),
+          description: description.trim() || undefined,
+          emoji,
+          exerciseIds: picked,
+        });
+      } else {
+        await createTemplate({
+          name: name.trim(),
+          description: description.trim() || undefined,
+          emoji,
+          exerciseIds: picked,
+        });
+      }
       router.refresh();
       onClose();
     });
@@ -224,7 +255,9 @@ function CreateTemplateModal({
       >
         <div className="mx-auto mt-2 mb-1 h-1 w-10 rounded-full bg-border sm:hidden" />
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <h3 className="font-bold text-base">Tạo template mới</h3>
+          <h3 className="font-bold text-base">
+            {template ? "Cập nhật template" : "Tạo template mới"}
+          </h3>
           <button type="button" onClick={onClose} className="btn btn-ghost btn-icon">
             <X className="h-4 w-4" />
           </button>
@@ -373,7 +406,7 @@ function CreateTemplateModal({
             disabled={!name.trim() || picked.length === 0}
             className="btn btn-primary w-full"
           >
-            Tạo template ({picked.length} bài)
+            {template ? "Cập nhật template" : `Tạo template (${picked.length} bài)`}
           </button>
         </div>
       </form>

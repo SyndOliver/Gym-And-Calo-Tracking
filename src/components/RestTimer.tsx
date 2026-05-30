@@ -14,7 +14,12 @@ export default function RestTimer() {
   const isOver = rest.remaining === 0;
 
   return (
-    <div className="fixed inset-x-0 bottom-[88px] z-30 px-3 sm:px-4 pointer-events-none">
+    <div 
+      className="fixed inset-x-0 z-30 px-3 sm:px-4 pointer-events-none"
+      style={{
+        bottom: "calc(78px + env(safe-area-inset-bottom, 0px))",
+      }}
+    >
       <div className="mx-auto w-full max-w-2xl pointer-events-auto">
         <div
           className={`relative overflow-hidden rounded-2xl border bg-card/95 backdrop-blur-xl p-3 shadow-2xl shadow-black/40 animate-slide-up ${

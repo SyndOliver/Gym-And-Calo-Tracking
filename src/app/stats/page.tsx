@@ -4,6 +4,7 @@ import { Trophy, Calendar, TrendingUp, Dumbbell, Flame } from "lucide-react";
 import { calculate1RM, calculateVolume, formatRelativeDay, getMuscleGroupInfo } from "@/lib/utils";
 import VolumeChart from "@/components/VolumeChart";
 import PageHeader from "@/components/PageHeader";
+import MuscleGroupChart from "@/components/MuscleGroupChart";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ async function getStats() {
     }),
     prisma.workout.findMany({
       where: { finishedAt: { not: null }, startedAt: { gte: weekStart } },
-      include: { exercises: { include: { sets: true } } },
+      include: { exercises: { include: { sets: true, exercise: true } } },
       orderBy: { startedAt: "asc" },
     }),
     prisma.setEntry.findMany({
@@ -81,6 +82,47 @@ async function getStats() {
     label: new Date(date).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }),
   }));
 
+  // Muscle Group Distribution (last 30 days)
+  const muscleGroups = new Map<string, { volume: number; sets: number }>();
+  for (const w of last30) {
+    for (const we of w.exercises) {
+      const muscleGroup = we.exercise.muscleGroup;
+      if (!muscleGroup) continue;
+
+      const vol = we.sets.reduce((sum, set) => sum + calculateVolume(set.reps, set.weight), 0);
+      const completedSetsCount = we.sets.filter((x) => x.isCompleted).length;
+
+      const current = muscleGroups.get(muscleGroup) || { volume: 0, sets: 0 };
+      muscleGroups.set(muscleGroup, {
+        volume: current.volume + vol,
+        sets: current.sets + completedSetsCount,
+      });
+    }
+  }
+
+  const muscleGroupColors: Record<string, string> = {
+    chest: "#ef4444",
+    back: "#3b82f6",
+    legs: "#a855f7",
+    shoulders: "#eab308",
+    arms: "#f97316",
+    core: "#22c55e",
+    cardio: "#ec4899",
+    fullbody: "#6366f1",
+  };
+
+  const muscleGroupDistribution = Array.from(muscleGroups.entries()).map(([group, counts]) => {
+    const info = getMuscleGroupInfo(group);
+    return {
+      group,
+      label: info.label,
+      emoji: info.emoji,
+      volume: counts.volume,
+      sets: counts.sets,
+      color: muscleGroupColors[group] || "#6b7280",
+    };
+  });
+
   // Total stats
   const totalWorkouts = allFinished.length;
   const totalVolume = allFinished.reduce(
@@ -107,6 +149,7 @@ async function getStats() {
     monthCount,
     topPRs,
     chartData,
+    muscleGroupDistribution,
     metricsCount: allMetrics.length,
   };
 }
@@ -135,6 +178,11 @@ export default async function StatsPage() {
           <span className="text-xs text-muted">kg</span>
         </div>
         <VolumeChart data={s.chartData} />
+      </section>
+
+      <section className="card space-y-3">
+        <h2 className="text-base font-semibold">Phân bổ nhóm cơ (30 ngày qua)</h2>
+        <MuscleGroupChart data={s.muscleGroupDistribution} />
       </section>
 
       <section className="space-y-3">

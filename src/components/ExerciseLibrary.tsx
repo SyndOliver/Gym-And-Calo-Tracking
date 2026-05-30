@@ -66,7 +66,12 @@ export default function ExerciseLibrary({ exercises }: { exercises: Exercise[] }
         }
       />
 
-      <div className="space-y-2.5 sticky top-0 z-20 -mx-3 sm:-mx-4 px-3 sm:px-4 py-2 bg-background/85 backdrop-blur-xl border-b border-border/50">
+      <div 
+        className="space-y-2.5 sticky z-20 -mx-3 sm:-mx-4 px-3 sm:px-4 py-2 bg-background/85 backdrop-blur-xl border-b border-border/50"
+        style={{
+          top: "env(safe-area-inset-top, 0px)",
+        }}
+      >
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted pointer-events-none" />
           <input

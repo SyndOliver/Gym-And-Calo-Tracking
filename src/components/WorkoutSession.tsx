@@ -16,6 +16,7 @@ import {
   PlayCircle,
   Info,
   Minus,
+  History,
 } from "lucide-react";
 import Link from "next/link";
 import { useActiveWorkout } from "./ActiveWorkoutProvider";
@@ -83,12 +84,19 @@ type Workout = {
   exercises: WorkoutExercise[];
 };
 
+type PreviousSetData = {
+  date: string;
+  sets: { setNumber: number; weight: number | null; reps: number | null }[];
+};
+
 export default function WorkoutSession({
   workout,
   allExercises,
+  previousSetsMap = {},
 }: {
   workout: Workout;
   allExercises: Exercise[];
+  previousSetsMap?: Record<string, PreviousSetData>;
 }) {
   const router = useRouter();
   const { setActiveWorkoutId, startRest, stopRest } = useActiveWorkout();
@@ -300,6 +308,7 @@ export default function WorkoutSession({
             we={we}
             isFinished={isFinished}
             onRest={(secs) => startRest(secs)}
+            previousSetData={previousSetsMap[we.exercise.id]}
           />
         ))}
       </section>
@@ -341,10 +350,12 @@ function ExerciseCard({
   we,
   isFinished,
   onRest,
+  previousSetData,
 }: {
   we: WorkoutExercise;
   isFinished: boolean;
   onRest: (secs: number) => void;
+  previousSetData?: PreviousSetData;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -433,6 +444,13 @@ function ExerciseCard({
             {we.exercise.equipment &&
               ` • ${EQUIPMENT_LABELS[we.exercise.equipment] ?? we.exercise.equipment}`}
           </p>
+          {previousSetData && (
+            <p className="text-[10px] text-primary/70 flex items-center gap-1 mt-0.5">
+              <History className="h-3 w-3" />
+              Lần trước: {new Date(previousSetData.date).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}
+              {" — "}{previousSetData.sets.length} sets
+            </p>
+          )}
         </div>
         <button
           onClick={() => setShowVideo(true)}
@@ -532,9 +550,18 @@ function ExerciseCard({
         {we.sets.length === 0 && (
           <p className="text-center text-xs text-muted py-2">Chưa có set nào</p>
         )}
-        {we.sets.map((s) => (
-          <SetRow key={s.id} set={s} isFinished={isFinished} onComplete={() => onRest(we.restSeconds)} />
-        ))}
+        {we.sets.map((s) => {
+          const prevSet = previousSetData?.sets.find((ps) => ps.setNumber === s.setNumber);
+          return (
+            <SetRow
+              key={s.id}
+              set={s}
+              isFinished={isFinished}
+              onComplete={() => onRest(we.restSeconds)}
+              previousSet={prevSet}
+            />
+          );
+        })}
       </div>
 
       <div className="flex items-center gap-2">
@@ -582,10 +609,12 @@ function SetRow({
   set,
   isFinished,
   onComplete,
+  previousSet,
 }: {
   set: SetEntry;
   isFinished: boolean;
   onComplete: () => void;
+  previousSet?: { setNumber: number; weight: number | null; reps: number | null };
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -651,23 +680,29 @@ function SetRow({
         type="number"
         inputMode="decimal"
         step="0.5"
-        placeholder="0"
+        placeholder={previousSet?.weight != null ? String(previousSet.weight) : "0"}
         value={weight}
         onChange={(e) => setWeight(e.target.value)}
         onBlur={(e) => persist("weight", e.target.value)}
         disabled={isFinished}
-        className="!py-1.5 !px-2 text-center text-sm"
+        className={cn(
+          "!py-1.5 !px-2 text-center text-sm",
+          previousSet?.weight != null && weight === "" && "!placeholder-primary/40"
+        )}
       />
       <input
         ref={repsRef}
         type="number"
         inputMode="numeric"
-        placeholder="0"
+        placeholder={previousSet?.reps != null ? String(previousSet.reps) : "0"}
         value={reps}
         onChange={(e) => setReps(e.target.value)}
         onBlur={(e) => persist("reps", e.target.value)}
         disabled={isFinished}
-        className="!py-1.5 !px-2 text-center text-sm"
+        className={cn(
+          "!py-1.5 !px-2 text-center text-sm",
+          previousSet?.reps != null && reps === "" && "!placeholder-primary/40"
+        )}
       />
       <button
         type="button"

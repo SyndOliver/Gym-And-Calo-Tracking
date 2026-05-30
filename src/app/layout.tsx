@@ -43,7 +43,12 @@ export default function RootLayout({
     <html lang="vi" className={`dark ${inter.variable}`}>
       <body className="min-h-dvh font-sans">
         <ActiveWorkoutProvider>
-          <main className="mx-auto w-full max-w-2xl px-3 pb-nav-safe pt-3 sm:px-4 sm:pt-6">
+          <main 
+            className="mx-auto w-full max-w-2xl px-3 pb-nav-safe sm:px-4"
+            style={{
+              paddingTop: "calc(env(safe-area-inset-top, 0px) + 16px)",
+            }}
+          >
             {children}
           </main>
           <RestTimer />

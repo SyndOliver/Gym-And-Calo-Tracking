@@ -239,3 +239,39 @@ export async function saveCaloriesOut(date: string, caloriesOut: number) {
   revalidatePath("/calendar");
   revalidatePath("/stats");
 }
+
+// ===== Món ăn yêu thích (Favorites) =====
+
+export async function addFavoriteMeal(data: {
+  name: string;
+  servingDescription?: string;
+  calories?: number;
+  protein?: number;
+  fat?: number;
+  carbs?: number;
+  fiber?: number;
+  mealType?: string;
+}) {
+  const name = data.name.trim();
+  if (!name) throw new Error("Tên món ăn là bắt buộc");
+
+  const meal = await prisma.favoriteMeal.create({
+    data: {
+      name,
+      servingDescription: data.servingDescription?.trim() || null,
+      calories: sanitizeNutritionValue(data.calories, "Calories", MAX_CALORIES),
+      protein: sanitizeNutritionValue(data.protein, "Protein", MAX_MACRO_GRAMS),
+      fat: sanitizeNutritionValue(data.fat, "Fat", MAX_MACRO_GRAMS),
+      carbs: sanitizeNutritionValue(data.carbs, "Carbs", MAX_MACRO_GRAMS),
+      fiber: sanitizeNutritionValue(data.fiber, "Fiber", MAX_MACRO_GRAMS),
+      mealType: data.mealType ?? "other",
+    },
+  });
+  revalidatePath("/food");
+  return meal;
+}
+
+export async function deleteFavoriteMeal(id: string) {
+  await prisma.favoriteMeal.delete({ where: { id } });
+  revalidatePath("/food");
+}

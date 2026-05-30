@@ -16,7 +16,7 @@ export default async function FoodPage({ searchParams }: Props) {
   const nextDay = new Date(target);
   nextDay.setDate(nextDay.getDate() + 1);
 
-  const [logs, goal, templates] = await Promise.all([
+  const [logs, goal, templates, favorites] = await Promise.all([
     prisma.foodLog.findMany({
       where: { date: { gte: target, lt: nextDay } },
       orderBy: { date: "asc" },
@@ -25,6 +25,9 @@ export default async function FoodPage({ searchParams }: Props) {
       where: { date: { gte: target, lt: nextDay } },
     }),
     prisma.nutritionGoalTemplate.findMany(),
+    prisma.favoriteMeal.findMany({
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
 
   return (
@@ -60,6 +63,17 @@ export default async function FoodPage({ searchParams }: Props) {
           carbs: t.carbs,
           fiber: t.fiber,
           waterGoalMl: t.waterGoalMl,
+        }))}
+        initialFavorites={favorites.map((f) => ({
+          id: f.id,
+          name: f.name,
+          servingDescription: f.servingDescription,
+          calories: f.calories,
+          protein: f.protein,
+          fat: f.fat,
+          carbs: f.carbs,
+          fiber: f.fiber,
+          mealType: f.mealType,
         }))}
       />
     </div>

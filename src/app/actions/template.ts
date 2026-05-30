@@ -37,3 +37,32 @@ export async function updateTemplateExercise(
 ) {
   await prisma.templateExercise.update({ where: { id }, data });
 }
+
+export async function updateTemplate(
+  id: string,
+  data: {
+    name: string;
+    description?: string;
+    emoji?: string;
+    exerciseIds: string[];
+  }
+) {
+  await prisma.$transaction([
+    prisma.templateExercise.deleteMany({ where: { templateId: id } }),
+    prisma.template.update({
+      where: { id },
+      data: {
+        name: data.name,
+        description: data.description || null,
+        emoji: data.emoji || "💪",
+        exercises: {
+          create: data.exerciseIds.map((eid, idx) => ({
+            exerciseId: eid,
+            order: idx,
+          })),
+        },
+      },
+    }),
+  ]);
+  revalidatePath("/templates");
+}

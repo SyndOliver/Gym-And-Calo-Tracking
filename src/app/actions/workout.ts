@@ -243,3 +243,52 @@ export async function deleteSet(setId: string) {
   );
   if (set.workoutExercise) revalidatePath(`/workout/${set.workoutExercise.workoutId}`);
 }
+
+// Lấy dữ liệu sets từ buổi tập trước cho danh sách bài tập (dùng gợi ý placeholder)
+export async function getPreviousSetsMap(
+  exerciseIds: string[],
+  currentWorkoutId: string
+): Promise<
+  Record<
+    string,
+    { date: string; sets: { setNumber: number; weight: number | null; reps: number | null }[] }
+  >
+> {
+  if (exerciseIds.length === 0) return {};
+
+  const result: Record<
+    string,
+    { date: string; sets: { setNumber: number; weight: number | null; reps: number | null }[] }
+  > = {};
+
+  // Tìm buổi tập trước gần nhất cho mỗi exercise
+  for (const exerciseId of exerciseIds) {
+    const prevWe = await prisma.workoutExercise.findFirst({
+      where: {
+        exerciseId,
+        workout: {
+          id: { not: currentWorkoutId },
+          finishedAt: { not: null },
+        },
+      },
+      orderBy: { workout: { startedAt: "desc" } },
+      include: {
+        sets: { orderBy: { setNumber: "asc" } },
+        workout: { select: { startedAt: true } },
+      },
+    });
+
+    if (prevWe && prevWe.sets.length > 0) {
+      result[exerciseId] = {
+        date: prevWe.workout.startedAt.toISOString(),
+        sets: prevWe.sets.map((s) => ({
+          setNumber: s.setNumber,
+          weight: s.weight,
+          reps: s.reps,
+        })),
+      };
+    }
+  }
+
+  return result;
+}
