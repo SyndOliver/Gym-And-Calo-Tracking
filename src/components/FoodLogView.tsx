@@ -1344,21 +1344,21 @@ export default function FoodLogView({
                   </button>
                 )}
               </label>
-              <div className="relative">
+              <div className="flex items-center gap-2">
                 <input
                   type="text"
                   value={draft.name}
                   onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
                   placeholder="Ví dụ: 3 quả trứng luộc..."
                   required
-                  className="pr-20 w-full"
+                  className="flex-1 min-w-0"
                 />
                 {draft.name.trim().length > 0 && (
                   <button
                     type="button"
                     onClick={handleAnalyzeText}
                     disabled={isAnalyzing}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 btn btn-primary !py-1 !px-2.5 !h-8 text-xs font-semibold rounded-lg flex items-center gap-1 transition-all"
+                    className="btn btn-primary !py-1.5 !px-3 !h-auto text-xs font-semibold rounded-lg flex items-center gap-1 transition-all flex-shrink-0 whitespace-nowrap"
                   >
                     {isAnalyzing ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
