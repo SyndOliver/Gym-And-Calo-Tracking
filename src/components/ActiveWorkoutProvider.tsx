@@ -101,37 +101,45 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
   }, [releaseWakeLock]);
 
   // ==================== Sound & Vibration ====================
-  const playBeep = useCallback(() => {
+  const playAlarm = useCallback(() => {
     try {
       const AudioCtor =
         (window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }).AudioContext ||
         (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtor) return;
       const ctx = new AudioCtor();
-      const playTone = (freq: number, start: number, duration: number) => {
+
+      // Tạo tiếng chuông alarm dạng bell — lặp 5 lần, to và rõ ràng
+      const bellTone = (freq: number, start: number, vol: number) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = "sine";
         osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0, ctx.currentTime + start);
-        gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + start + 0.02);
-        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + start + duration);
+        // Envelope giống tiếng chuông: attack nhanh, decay tự nhiên
+        const t = ctx.currentTime + start;
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(vol, t + 0.01); // attack nhanh
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.45); // decay tự nhiên
         osc.connect(gain);
         gain.connect(ctx.destination);
-        osc.start(ctx.currentTime + start);
-        osc.stop(ctx.currentTime + start + duration);
+        osc.start(t);
+        osc.stop(t + 0.5);
       };
-      // 3 tiếng beep rõ ràng hơn để nhận biết khi đeo tai nghe
-      playTone(880, 0, 0.18);
-      playTone(1100, 0.22, 0.18);
-      playTone(1320, 0.44, 0.25);
+
+      // 5 chuỗi chuông lặp lại — tổng ~3 giây
+      for (let i = 0; i < 5; i++) {
+        const offset = i * 0.6;
+        bellTone(1047, offset, 0.5);       // C6 — note cao, rõ ràng
+        bellTone(1319, offset + 0.02, 0.3); // E6 — harmonic phụ tạo âm bell
+        bellTone(880, offset + 0.3, 0.4);  // A5 — note thấp hơn xen kẽ
+      }
     } catch {
       // ignore audio errors (e.g. autoplay restrictions)
     }
-    // Rung mạnh hơn: 3 lần rung dài để nhận biết khi điện thoại trong túi
+    // Rung mạnh: pattern dài để nhận biết khi điện thoại trong túi
     if (typeof navigator !== "undefined" && "vibrate" in navigator) {
       try {
-        navigator.vibrate?.([300, 150, 300, 150, 400]);
+        navigator.vibrate?.([300, 100, 300, 100, 300, 100, 400]);
       } catch {
         // ignore
       }
@@ -167,7 +175,7 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
         if (secondsLeft <= 0 && !beepedRef.current) {
           beepedRef.current = true;
           targetEndRef.current = 0;
-          playBeep();
+          playAlarm();
           return { ...r, remaining: 0, isRunning: false };
         }
         return { ...r, remaining: secondsLeft };
@@ -177,7 +185,7 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [rest.isRunning, playBeep]);
+  }, [rest.isRunning, playAlarm]);
 
   const startRest = useCallback((seconds: number) => {
     targetEndRef.current = Date.now() + seconds * 1000;
