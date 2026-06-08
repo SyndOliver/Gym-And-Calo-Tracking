@@ -26,6 +26,8 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
   const [rest, setRest] = useState<RestTimerState>({ isRunning: false, remaining: 0, initial: 0 });
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const beepedRef = useRef(false);
+  const targetEndRef = useRef<number>(0); // timestamp khi timer hết giờ
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -38,6 +40,67 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
     else localStorage.removeItem(STORAGE_KEY);
   }, []);
 
+  // ==================== Wake Lock API ====================
+  // Giữ màn hình sáng khi đang có buổi tập hoạt động hoặc rest timer đang chạy
+  const requestWakeLock = useCallback(async () => {
+    try {
+      if (
+        "wakeLock" in navigator &&
+        document.visibilityState === "visible" &&
+        !wakeLockRef.current
+      ) {
+        wakeLockRef.current = await navigator.wakeLock.request("screen");
+        wakeLockRef.current.addEventListener("release", () => {
+          wakeLockRef.current = null;
+        });
+      }
+    } catch {
+      // Wake Lock API không được hỗ trợ hoặc bị từ chối
+    }
+  }, []);
+
+  const releaseWakeLock = useCallback(async () => {
+    try {
+      if (wakeLockRef.current) {
+        await wakeLockRef.current.release();
+        wakeLockRef.current = null;
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Quản lý Wake Lock dựa trên trạng thái buổi tập + rest timer
+  useEffect(() => {
+    const shouldLock = !!activeWorkoutId || rest.isRunning;
+    if (shouldLock) {
+      requestWakeLock();
+    } else {
+      releaseWakeLock();
+    }
+
+    // Tự động yêu cầu lại Wake Lock khi tab trở lại visible
+    // (Wake Lock bị release khi tab mất focus / minimize)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && shouldLock) {
+        requestWakeLock();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [activeWorkoutId, rest.isRunning, requestWakeLock, releaseWakeLock]);
+
+  // Cleanup Wake Lock khi component unmount
+  useEffect(() => {
+    return () => {
+      releaseWakeLock();
+    };
+  }, [releaseWakeLock]);
+
+  // ==================== Sound & Vibration ====================
   const playBeep = useCallback(() => {
     try {
       const AudioCtor =
@@ -58,20 +121,27 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
         osc.start(ctx.currentTime + start);
         osc.stop(ctx.currentTime + start + duration);
       };
+      // 3 tiếng beep rõ ràng hơn để nhận biết khi đeo tai nghe
       playTone(880, 0, 0.18);
-      playTone(1320, 0.22, 0.25);
+      playTone(1100, 0.22, 0.18);
+      playTone(1320, 0.44, 0.25);
     } catch {
       // ignore audio errors (e.g. autoplay restrictions)
     }
+    // Rung mạnh hơn: 3 lần rung dài để nhận biết khi điện thoại trong túi
     if (typeof navigator !== "undefined" && "vibrate" in navigator) {
       try {
-        navigator.vibrate?.([200, 100, 200]);
+        navigator.vibrate?.([300, 150, 300, 150, 400]);
       } catch {
         // ignore
       }
     }
   }, []);
 
+  // ==================== Timer Logic (target-based) ====================
+  // Sử dụng target timestamp thay vì đếm ngược mỗi giây
+  // Điều này giúp timer chính xác hơn khi browser throttle setInterval
+  // (ví dụ: khi tab ở background, màn hình tắt trên mobile...)
   useEffect(() => {
     if (!rest.isRunning) {
       if (intervalRef.current) {
@@ -81,38 +151,56 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
       return;
     }
     beepedRef.current = false;
+
+    // Lưu timestamp mục tiêu khi bắt đầu đếm
+    if (targetEndRef.current === 0) {
+      targetEndRef.current = Date.now() + rest.remaining * 1000;
+    }
+
     intervalRef.current = setInterval(() => {
+      const now = Date.now();
+      const msLeft = Math.max(0, targetEndRef.current - now);
+      const secondsLeft = Math.ceil(msLeft / 1000);
+
       setRest((r) => {
         if (!r.isRunning) return r;
-        const next = Math.max(0, r.remaining - 1);
-        if (next === 0 && !beepedRef.current) {
+        if (secondsLeft <= 0 && !beepedRef.current) {
           beepedRef.current = true;
+          targetEndRef.current = 0;
           playBeep();
           return { ...r, remaining: 0, isRunning: false };
         }
-        return { ...r, remaining: next };
+        return { ...r, remaining: secondsLeft };
       });
-    }, 1000);
+    }, 250); // Kiểm tra mỗi 250ms thay vì 1000ms để chính xác hơn
+
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [rest.isRunning, playBeep]);
 
   const startRest = useCallback((seconds: number) => {
+    targetEndRef.current = Date.now() + seconds * 1000;
     setRest({ isRunning: true, remaining: seconds, initial: seconds });
   }, []);
 
   const stopRest = useCallback(() => {
+    targetEndRef.current = 0;
     setRest({ isRunning: false, remaining: 0, initial: 0 });
   }, []);
 
   const addRest = useCallback((delta: number) => {
-    setRest((r) => ({
-      ...r,
-      remaining: Math.max(0, r.remaining + delta),
-      initial: Math.max(r.initial, r.remaining + delta),
-      isRunning: r.remaining + delta > 0,
-    }));
+    setRest((r) => {
+      const newRemaining = Math.max(0, r.remaining + delta);
+      // Cập nhật target timestamp khi thêm/bớt thời gian
+      targetEndRef.current = Date.now() + newRemaining * 1000;
+      return {
+        ...r,
+        remaining: newRemaining,
+        initial: Math.max(r.initial, newRemaining),
+        isRunning: newRemaining > 0,
+      };
+    });
   }, []);
 
   return (

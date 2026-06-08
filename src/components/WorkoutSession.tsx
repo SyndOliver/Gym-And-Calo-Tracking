@@ -17,6 +17,9 @@ import {
   Info,
   Minus,
   History,
+  Flame,
+  Trophy,
+  TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
 import { useActiveWorkout } from "./ActiveWorkoutProvider";
@@ -444,13 +447,33 @@ function ExerciseCard({
             {we.exercise.equipment &&
               ` • ${EQUIPMENT_LABELS[we.exercise.equipment] ?? we.exercise.equipment}`}
           </p>
-          {previousSetData && (
-            <p className="text-[10px] text-primary/70 flex items-center gap-1 mt-0.5">
-              <History className="h-3 w-3" />
-              Lần trước: {new Date(previousSetData.date).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}
-              {" — "}{previousSetData.sets.length} sets
-            </p>
-          )}
+          {previousSetData && (() => {
+            // T\u00ednh target g\u1ee3i \u00fd: l\u1ea5y set n\u1eb7ng nh\u1ea5t c\u1ee7a bu\u1ed5i tr\u01b0\u1edbc
+            const bestPrev = previousSetData.sets.reduce((best, s) => {
+              if (s.weight == null || s.reps == null) return best;
+              const vol = s.weight * s.reps;
+              if (!best || vol > (best.weight! * best.reps!)) return s;
+              return best;
+            }, null as (typeof previousSetData.sets)[0] | null);
+            const targetWeight = bestPrev?.weight != null ? bestPrev.weight + 2.5 : null;
+            const targetReps = bestPrev?.reps != null ? bestPrev.reps + 1 : null;
+
+            return (
+              <div className="flex flex-col gap-0.5 mt-0.5">
+                <p className="text-[10px] text-primary/70 flex items-center gap-1">
+                  <History className="h-3 w-3" />
+                  L\u1ea7n tr\u01b0\u1edbc: {new Date(previousSetData.date).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}
+                  {" \u2014 "}{previousSetData.sets.length} sets
+                </p>
+                {bestPrev?.weight != null && bestPrev?.reps != null && (
+                  <p className="text-[10px] text-yellow-400/80 flex items-center gap-1">
+                    <TrendingUp className="h-3 w-3" />
+                    M\u1ee5c ti\u00eau: {targetWeight}kg \u00d7 {bestPrev.reps} ho\u1eb7c {bestPrev.weight}kg \u00d7 {targetReps}
+                  </p>
+                )}
+              </div>
+            );
+          })()}
         </div>
         <button
           onClick={() => setShowVideo(true)}
@@ -622,6 +645,7 @@ function SetRow({
   const [weight, setWeight] = useState<string>(set.weight?.toString() ?? "");
   const repsRef = useRef<HTMLInputElement>(null);
   const weightRef = useRef<HTMLInputElement>(null);
+  const [showPR, setShowPR] = useState(false);
 
   // Đồng bộ lại state khi prop set thay đổi từ ngoài (vd: bulkSetReps)
   useEffect(() => {
@@ -632,6 +656,30 @@ function SetRow({
       setWeight(set.weight?.toString() ?? "");
     }
   }, [set.reps, set.weight]);
+
+  // Progressive Overload Detection
+  const currentWeight = weight === "" ? null : Number(weight);
+  const currentReps = reps === "" ? null : Number(reps);
+  const prevWeight = previousSet?.weight ?? null;
+  const prevReps = previousSet?.reps ?? null;
+
+  const isWeightUp = currentWeight != null && prevWeight != null && currentWeight > prevWeight;
+  const isRepsUp = currentReps != null && prevReps != null && currentWeight != null && prevWeight != null
+    && currentWeight >= prevWeight && currentReps > prevReps;
+  const isVolumeUp = currentWeight != null && currentReps != null && prevWeight != null && prevReps != null
+    && (currentWeight * currentReps) > (prevWeight * prevReps);
+  const isPR = isWeightUp || isVolumeUp;
+
+  // Trigger PR celebration khi phát hiện PR mới
+  useEffect(() => {
+    if (isPR && !isFinished) {
+      setShowPR(true);
+      const t = setTimeout(() => setShowPR(false), 2000);
+      return () => clearTimeout(t);
+    } else {
+      setShowPR(false);
+    }
+  }, [isPR, isFinished]);
 
   function persist(field: "reps" | "weight", value: string) {
     const num = value === "" ? null : Number(value);
@@ -647,7 +695,7 @@ function SetRow({
         weight: weight === "" ? null : Number(weight),
       });
       router.refresh();
-      onComplete(); // Kích hoạt bộ đếm ngược thời gian nghỉ
+      onComplete();
     });
   }
 
@@ -663,47 +711,76 @@ function SetRow({
   return (
     <div
       className={cn(
-        "grid grid-cols-[28px_1fr_1fr_44px_36px] items-center gap-1.5 rounded-lg px-1 py-1 transition-colors",
-        hasData && "bg-success/5"
+        "grid grid-cols-[28px_1fr_1fr_44px_36px] items-center gap-1.5 rounded-lg px-1 py-1 transition-colors relative",
+        hasData && !isPR && "bg-success/5",
+        isPR && "bg-gradient-to-r from-yellow-500/10 via-orange-500/8 to-yellow-500/10 border border-yellow-500/20"
       )}
     >
+      {/* PR celebration flash */}
+      {showPR && (
+        <span className="absolute inset-0 rounded-lg animate-pr-flash pointer-events-none" />
+      )}
       <span
         className={cn(
-          "flex h-6 w-6 items-center justify-center rounded-md text-xs font-semibold transition-colors",
-          hasData ? "bg-success/30 text-success" : "bg-surface text-muted"
+          "flex h-6 w-6 items-center justify-center rounded-md text-xs font-semibold transition-colors relative",
+          isPR
+            ? "bg-yellow-500/30 text-yellow-400"
+            : hasData
+              ? "bg-success/30 text-success"
+              : "bg-surface text-muted"
         )}
       >
-        {set.setNumber}
+        {isPR ? (
+          <Flame className="h-3.5 w-3.5" />
+        ) : (
+          set.setNumber
+        )}
       </span>
-      <input
-        ref={weightRef}
-        type="number"
-        inputMode="decimal"
-        step="0.5"
-        placeholder={previousSet?.weight != null ? String(previousSet.weight) : "0"}
-        value={weight}
-        onChange={(e) => setWeight(e.target.value)}
-        onBlur={(e) => persist("weight", e.target.value)}
-        disabled={isFinished}
-        className={cn(
-          "!py-1.5 !px-2 text-center text-sm",
-          previousSet?.weight != null && weight === "" && "!placeholder-primary/40"
+      <div className="relative">
+        <input
+          ref={weightRef}
+          type="number"
+          inputMode="decimal"
+          step="0.5"
+          placeholder={prevWeight != null ? String(prevWeight) : "0"}
+          value={weight}
+          onChange={(e) => setWeight(e.target.value)}
+          onBlur={(e) => persist("weight", e.target.value)}
+          disabled={isFinished}
+          className={cn(
+            "!py-1.5 !px-2 text-center text-sm",
+            prevWeight != null && weight === "" && "!placeholder-primary/40",
+            isWeightUp && "!border-yellow-500/50 !text-yellow-300"
+          )}
+        />
+        {isWeightUp && (
+          <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-yellow-500 text-[8px] text-black font-bold animate-scale-in z-10">
+            ↑
+          </span>
         )}
-      />
-      <input
-        ref={repsRef}
-        type="number"
-        inputMode="numeric"
-        placeholder={previousSet?.reps != null ? String(previousSet.reps) : "0"}
-        value={reps}
-        onChange={(e) => setReps(e.target.value)}
-        onBlur={(e) => persist("reps", e.target.value)}
-        disabled={isFinished}
-        className={cn(
-          "!py-1.5 !px-2 text-center text-sm",
-          previousSet?.reps != null && reps === "" && "!placeholder-primary/40"
+      </div>
+      <div className="relative">
+        <input
+          ref={repsRef}
+          type="number"
+          inputMode="numeric"
+          placeholder={prevReps != null ? String(prevReps) : "0"}
+          value={reps}
+          onChange={(e) => setReps(e.target.value)}
+          onBlur={(e) => persist("reps", e.target.value)}
+          disabled={isFinished}
+          className={cn(
+            "!py-1.5 !px-2 text-center text-sm",
+            prevReps != null && reps === "" && "!placeholder-primary/40",
+            isRepsUp && "!border-emerald-500/50 !text-emerald-300"
+          )}
+        />
+        {isRepsUp && (
+          <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[8px] text-black font-bold animate-scale-in z-10">
+            ↑
+          </span>
         )}
-      />
+      </div>
       <button
         type="button"
         onClick={startRestTimer}

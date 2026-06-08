@@ -54,6 +54,10 @@ const config: Config = {
           "0%, 100%": { transform: "translateY(0)" },
           "50%": { transform: "translateY(-3px)" },
         },
+        "pr-flash": {
+          "0%": { opacity: "0.6", boxShadow: "inset 0 0 20px rgb(234 179 8 / 0.4)" },
+          "100%": { opacity: "0", boxShadow: "inset 0 0 0px transparent" },
+        },
         shine: {
           "0%": { transform: "translateX(-100%)" },
           "100%": { transform: "translateX(200%)" },
@@ -66,6 +70,7 @@ const config: Config = {
         "pulse-ring": "pulseRing 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         float: "float 3s ease-in-out infinite",
         shine: "shine 2.5s ease-in-out infinite",
+        "pr-flash": "pr-flash 1.5s ease-out forwards",
       },
       boxShadow: {
         glow: "0 0 0 1px rgb(99 102 241 / 0.2), 0 12px 40px -10px rgb(99 102 241 / 0.4)",
