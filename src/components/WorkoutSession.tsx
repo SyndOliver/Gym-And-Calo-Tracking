@@ -448,7 +448,7 @@ function ExerciseCard({
               ` • ${EQUIPMENT_LABELS[we.exercise.equipment] ?? we.exercise.equipment}`}
           </p>
           {previousSetData && (() => {
-            // T\u00ednh target g\u1ee3i \u00fd: l\u1ea5y set n\u1eb7ng nh\u1ea5t c\u1ee7a bu\u1ed5i tr\u01b0\u1edbc
+            // Tính target gợi ý: lấy set nặng nhất của buổi trước
             const bestPrev = previousSetData.sets.reduce((best, s) => {
               if (s.weight == null || s.reps == null) return best;
               const vol = s.weight * s.reps;
@@ -462,13 +462,13 @@ function ExerciseCard({
               <div className="flex flex-col gap-0.5 mt-0.5">
                 <p className="text-[10px] text-primary/70 flex items-center gap-1">
                   <History className="h-3 w-3" />
-                  L\u1ea7n tr\u01b0\u1edbc: {new Date(previousSetData.date).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}
-                  {" \u2014 "}{previousSetData.sets.length} sets
+                  Lần trước: {new Date(previousSetData.date).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}
+                  {" — "}{previousSetData.sets.length} sets
                 </p>
                 {bestPrev?.weight != null && bestPrev?.reps != null && (
                   <p className="text-[10px] text-yellow-400/80 flex items-center gap-1">
                     <TrendingUp className="h-3 w-3" />
-                    M\u1ee5c ti\u00eau: {targetWeight}kg \u00d7 {bestPrev.reps} ho\u1eb7c {bestPrev.weight}kg \u00d7 {targetReps}
+                    Mục tiêu: {targetWeight}kg × {bestPrev.reps} hoặc {bestPrev.weight}kg × {targetReps}
                   </p>
                 )}
               </div>
