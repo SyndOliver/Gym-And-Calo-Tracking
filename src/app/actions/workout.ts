@@ -18,24 +18,37 @@ export async function startWorkoutFromTemplate(templateId: string) {
   });
   if (!tpl) throw new Error("Template không tồn tại");
 
+  // Lấy dữ liệu buổi tập trước cho mỗi bài tập (số set + kg/reps)
+  const exerciseIds = tpl.exercises.map((e) => e.exerciseId);
+  const previousDataMap = await getLastWorkoutData(exerciseIds);
+
   const w = await prisma.workout.create({
     data: {
       name: tpl.name,
       templateId: tpl.id,
       exercises: {
-        create: tpl.exercises.map((e, idx) => ({
-          exerciseId: e.exerciseId,
-          order: idx,
-          restSeconds: e.restSeconds,
-          sets: {
-            create: Array.from({ length: Math.max(1, e.defaultSets) }, (_, i) => ({
-              setNumber: i + 1,
-              reps: e.defaultReps,
-              weight: null,
-              isCompleted: false,
-            })),
-          },
-        })),
+        create: tpl.exercises.map((e, idx) => {
+          const prev = previousDataMap[e.exerciseId];
+          // Ưu tiên số set từ buổi trước, nếu không có thì dùng template default
+          const setCount = prev ? prev.sets.length : Math.max(1, e.defaultSets);
+
+          return {
+            exerciseId: e.exerciseId,
+            order: idx,
+            restSeconds: e.restSeconds,
+            sets: {
+              create: Array.from({ length: Math.max(1, setCount) }, (_, i) => {
+                const prevSet = prev?.sets.find((s) => s.setNumber === i + 1);
+                return {
+                  setNumber: i + 1,
+                  reps: prevSet?.reps ?? e.defaultReps,
+                  weight: prevSet?.weight ?? null,
+                  isCompleted: false,
+                };
+              }),
+            },
+          };
+        }),
       },
     },
     include: { exercises: { include: { sets: true } } },
@@ -97,8 +110,13 @@ export async function addExerciseToWorkout(
   options?: { sets?: number; reps?: number | null }
 ) {
   const count = await prisma.workoutExercise.count({ where: { workoutId } });
-  const setsCount = Math.max(1, Math.min(20, options?.sets ?? 3));
-  const reps = options?.reps ?? null;
+
+  // Lấy dữ liệu buổi trước để gợi ý số set + kg/reps
+  const previousDataMap = await getLastWorkoutData([exerciseId]);
+  const prev = previousDataMap[exerciseId];
+
+  const setsCount = Math.max(1, Math.min(20, options?.sets ?? (prev ? prev.sets.length : 3)));
+  const defaultReps = options?.reps ?? null;
 
   const we = await prisma.workoutExercise.create({
     data: {
@@ -106,12 +124,15 @@ export async function addExerciseToWorkout(
       exerciseId,
       order: count,
       sets: {
-        create: Array.from({ length: setsCount }, (_, i) => ({
-          setNumber: i + 1,
-          reps,
-          weight: null,
-          isCompleted: false,
-        })),
+        create: Array.from({ length: setsCount }, (_, i) => {
+          const prevSet = prev?.sets.find((s) => s.setNumber === i + 1);
+          return {
+            setNumber: i + 1,
+            reps: prevSet?.reps ?? defaultReps,
+            weight: prevSet?.weight ?? null,
+            isCompleted: false,
+          };
+        }),
       },
     },
   });
@@ -281,6 +302,50 @@ export async function getPreviousSetsMap(
     if (prevWe && prevWe.sets.length > 0) {
       result[exerciseId] = {
         date: prevWe.workout.startedAt.toISOString(),
+        sets: prevWe.sets.map((s) => ({
+          setNumber: s.setNumber,
+          weight: s.weight,
+          reps: s.reps,
+        })),
+      };
+    }
+  }
+
+  return result;
+}
+
+// Hàm nội bộ: lấy dữ liệu buổi tập gần nhất cho mỗi exercise (số set + kg/reps)
+async function getLastWorkoutData(
+  exerciseIds: string[]
+): Promise<
+  Record<
+    string,
+    { sets: { setNumber: number; weight: number | null; reps: number | null }[] }
+  >
+> {
+  if (exerciseIds.length === 0) return {};
+
+  const result: Record<
+    string,
+    { sets: { setNumber: number; weight: number | null; reps: number | null }[] }
+  > = {};
+
+  for (const exerciseId of exerciseIds) {
+    const prevWe = await prisma.workoutExercise.findFirst({
+      where: {
+        exerciseId,
+        workout: {
+          finishedAt: { not: null },
+        },
+      },
+      orderBy: { workout: { startedAt: "desc" } },
+      include: {
+        sets: { orderBy: { setNumber: "asc" } },
+      },
+    });
+
+    if (prevWe && prevWe.sets.length > 0) {
+      result[exerciseId] = {
         sets: prevWe.sets.map((s) => ({
           setNumber: s.setNumber,
           weight: s.weight,
